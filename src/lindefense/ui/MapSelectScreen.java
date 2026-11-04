@@ -27,6 +27,7 @@ public final class MapSelectScreen extends GCompound {
     private final List<NeonButton> buttons = new ArrayList<>();
     private final LogoEmblem mark;
     private double t;
+    private final DifficultySelector difficulty;   // DIFFICULTY HOOK
 
     public MapSelectScreen(LindefenseProgram app) {
         add(Ui.rect(0, 0, Ui.W, Ui.H, MenuScreen.BG, MenuScreen.BG));
@@ -47,7 +48,10 @@ public final class MapSelectScreen extends GCompound {
         List<GameMap> maps = MapCatalog.createAll();
         int n = maps.size();
         int rows = Math.max(1, (n + COLS - 1) / COLS);
-        double top = 108, bottom = Ui.H - 28, gap = 18;
+        // DIFFICULTY HOOK: mode picker under the subtitle; map cards start lower to make room
+        difficulty = new DifficultySelector(25, 100, Ui.W - 50);
+        add(difficulty);
+        double top = 178, bottom = Ui.H - 28, gap = 18;
         double cardW = (Ui.W - 50 - gap * (COLS - 1)) / COLS;
         double cardH = (bottom - top - gap * (rows - 1)) / rows;
         for (int i = 0; i < n; i++) {
@@ -159,6 +163,7 @@ public final class MapSelectScreen extends GCompound {
     }
 
     public void mousePressed(double lx, double ly) {
+        if (difficulty.mousePressed(lx, ly)) return;   // DIFFICULTY HOOK
         for (NeonButton b : buttons) if (b.hit(lx, ly)) { b.click(); return; }
     }
 

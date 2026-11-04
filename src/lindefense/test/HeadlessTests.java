@@ -59,6 +59,8 @@ public final class HeadlessTests {
         run("winAndLose", HeadlessTests::winAndLose);
         run("shopLayout", HeadlessTests::shopLayout);
         run("stressLateWaves", HeadlessTests::stressLateWaves);
+        // DIFFICULTY HOOK: Difficulty Growth suite (see DifficultyTests)
+        run("difficultyGrowth", () -> { for (String f : DifficultyTests.run()) check(false, f); check(DifficultyTests.checkCount() > 100, "difficulty suite ran (" + DifficultyTests.checkCount() + " checks)"); });
 
         System.out.println();
         System.out.println("Passed: " + passed + "  Failed: " + failed);
@@ -854,6 +856,17 @@ public final class HeadlessTests {
         check(Math.abs(gpt.effectiveRange(g2) - gpt.getStats().range * 0.5) < 1e-6, "storm halves range");
         forcePlace(g2, TowerType.COPILOT, buildableNear(g2, gpt.getPosition().add(new Vec(60, 0)), 100), 0);
         check(Math.abs(gpt.effectiveRange(g2) - gpt.getStats().range) < 1e-6, "Logic Specialist counters storm");
+        // placement-ghost preview passes a null tower (WorldView.syncOverlay); used to NPE here
+        boolean previewOk;
+        double previewMult = -1;
+        try { previewMult = hc.towerRangeMultiplier(g2, null); previewOk = true; } catch (RuntimeException ex) { previewOk = false; }
+        check(previewOk && Math.abs(previewMult - 0.5) < 1e-9, "storm range preview accepts a null tower (got " + previewMult + ")");
+        for (int m = 0; m < MapCatalog.MAP_COUNT; m++) {
+            Game gm = newGame(m);
+            boolean ok = true;
+            try { gm.getMap().towerRangeMultiplier(gm, null); } catch (RuntimeException ex) { ok = false; }
+            check(ok, "map " + m + " range preview accepts a null tower");
+        }
         // Monolith: venting
         Game g3 = newGame(1);
         lindefense.map.LegacyMonolith lm = (lindefense.map.LegacyMonolith) g3.getMap();

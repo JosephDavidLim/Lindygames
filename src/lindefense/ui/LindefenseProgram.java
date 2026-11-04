@@ -45,7 +45,7 @@ public class LindefenseProgram extends GraphicsProgram {
         // keep the 1.6 aspect ratio of the logical layout
         if (w / 1.6 > h) w = (int) (h * 1.6); else h = (int) (w / 1.6) + 28;
         setSize(w, h);
-        setTitle("Lindefense - AI Tower Defense");
+        setTitle("Lindefense - The Last Line of Code");
         setBackground(Ui.BG);
     }
 
@@ -118,7 +118,7 @@ public class LindefenseProgram extends GraphicsProgram {
         clearScreens();
         menu = null;
         mapSelect = null;
-        Game game = new Game(MapCatalog.create(mapIndex), System.nanoTime());
+        Game game = new Game(MapCatalog.create(mapIndex), System.nanoTime(), lindefense.sim.Difficulty.getSelected());   // DIFFICULTY HOOK
         gameScreen = new GameScreen(this, game);
         root.add(gameScreen);
         getGCanvas().requestFocusInWindow();

@@ -1,4 +1,4 @@
-# Lindefense - AI Tower Defense
+# Lindefense - The Last Line of Code
 
 ![Lindefense title card](docs/titlecard.png)
 
@@ -133,7 +133,30 @@ java  -cp build:lib/acm.jar lindefense.test.HeadlessTests        # headless chec
 java  -cp build:lib/acm.jar lindefense.tools.DesignDocGenerator  # regenerate DESIGN.md
 java  -cp build:lib/acm.jar lindefense.tools.AutoPlayer [maxWave] [mapIndex]   # balance probe (bot plays the maps)
 #   optional: -Dbot.maxTowers=N -Dbot.random=true to handicap the bot (tower cap / random placement)
+#   optional: -Dbot.difficulty=O1|ON|ON2|ONN  (Difficulty Growth mode, default O1)  -Dbot.seed=N  -Dbot.maxMinutes=N  -Dbot.reportEvery=N
 ```
+
+## Difficulty Growth
+
+Four modes named after Big-O classes, picked on the map-select screen (or `-Dlindefense.difficulty=O1|ON|ON2|ONN`; default **O(1)**, the
+unchanged original game). All knobs are relative multipliers on top of the base game and live in `lindefense.sim.Difficulty`.
+HP, enemy count and elite chance ramp with the mode's curve (flat, linear, quadratic, capped super-exponential); tower damage and income are flat.
+
+| Knob | O(1) Constant | O(N) Linear (Normal) | O(N^2) Quadratic (Hard) | O(N^N) Super-exponential (Impossible) |
+|---|---|---|---|---|
+| Enemy HP x (wave 1 -> 100) | 1 | 1.1 -> 1.5 | 1.2 -> 2.2 | 1.3 -> 3.0 |
+| Enemy count x (wave 1 -> 100) | 1 | 1.1 -> 1.4 | 1.2 -> 2.3 | 1.3 -> 2.4 |
+| Tower damage x | 1 | 0.92 | 0.86 | 0.75 |
+| Income x (kills + wave bonus) | 1 | 0.8 | 0.6 | 0.5 |
+| Starting cash x | 1 | 1 | 1 | 2 |
+| Elite chance per spawn | none | none | 3% -> 60% | 5% -> 60% |
+| Elite rules | - | - | +1 random modifier, 35% promoted to a tougher type | +2 random modifiers, 50% promoted |
+| Extra bosses | none | none | none | 14 groups on waves 25-100 (MOAB, BFB, ZOMG, DDT; see DESIGN.md section 7) |
+| Palantir | unchanged | HP x damage-compensation | same | same (+3% per tier) |
+
+Extra bosses (O(N^N) only): MOAB on 25, 35, 45 (x2), 75 (x4 Fortified); BFB on 50, 60, 70 (x2), 85 (x2 Fortified), 99 (x2); ZOMG on 80, 95;
+DDT on 90 (x2), 97 (x2), 100 (x2 Fortified). Palantir is never duplicated. Balance-bot calibration (near-optimal bot wins every map on O(N) and O(N^2); on O(N^N) it wins 9 of 12
+map/seed runs, losing only on The Singularity Core in waves 88-98) is described in DESIGN.md section 7; re-run `AutoPlayer` with `-Dbot.difficulty=...` after any stat changes.
 
 ## 3. Controls
 

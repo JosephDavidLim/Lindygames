@@ -23,7 +23,7 @@ public final class CountingSortSprite extends EnemySprite {
         bodyOval(0, 0, 2.1 * r, 2.1 * r, Art.COUNTING);
         thin(part(Art.ovalAt(0, 0, 1.6 * r, 1.6 * r), Art.tint(Art.COUNTING, 0.75), Art.shade(Art.COUNTING, 0.4)));
         double s = r * 0.62;
-        Font f = new Font("SansSerif", Font.BOLD, Math.max(7, (int) Math.round(r * 0.52)));
+        Font f = lindefense.ui.Ui.mono(Font.BOLD, Math.max(7, (int) Math.round(r * 0.52)));
         for (int i = 0; i < 4; i++) {
             double cx = (i % 2 == 0 ? -0.36 : 0.36) * r, cy = (i < 2 ? -0.36 : 0.36) * r;
             thin(part(Art.rect(cx - s / 2, cy - s / 2, s, s), new Color(252, 252, 245), Art.OUTLINE));

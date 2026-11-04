@@ -66,7 +66,7 @@ public abstract class BossSprite extends EnemySprite {
     /** Text emblem anchored at local position; stays upright. */
     protected GLabel emblem(String text, Color c, double lx, double ly, double size) {
         GLabel l = new GLabel(text);
-        l.setFont(new Font("SansSerif", Font.BOLD, Math.max(8, (int) Math.round(size))));
+        l.setFont(lindefense.ui.Ui.display(Font.BOLD, Math.max(8, (int) Math.round(size))));
         fixedStroke(l, c);
         orbit(l, lx, ly);
         return l;

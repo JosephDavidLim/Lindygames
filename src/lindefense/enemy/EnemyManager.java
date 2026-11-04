@@ -59,7 +59,7 @@ public class EnemyManager {
 
     /** Spawns an enemy of the given type at the start of a route (routeIndex &lt; 0 = random). */
     public Enemy spawn(EnemyType type, EnumSet<Modifier> mods, int routeIndex, double distance) {
-        return spawnScaled(type, mods, routeIndex, distance, game.getWaveHpScale(), game.getWaveSpeedScale());
+        return spawnScaled(type, mods, routeIndex, distance, game.getWaveHpScale(type), game.getWaveSpeedScale());   // DIFFICULTY HOOK: type-aware HP
     }
 
     public Enemy spawnScaled(EnemyType type, EnumSet<Modifier> mods, int routeIndex, double distance,

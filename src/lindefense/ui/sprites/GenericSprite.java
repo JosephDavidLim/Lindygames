@@ -22,7 +22,7 @@ public final class GenericSprite extends EnemySprite {
         bodyPoly(c, hexagon(r * 0.95));
         gloss(0, 0, 1.9 * r, 1.9 * r);
         GLabel l = new GLabel(e.getType().displayName.substring(0, 1));
-        l.setFont(new Font("SansSerif", Font.BOLD, Math.max(8, (int) Math.round(r * 0.9))));
+        l.setFont(lindefense.ui.Ui.display(Font.BOLD, Math.max(8, (int) Math.round(r * 0.9))));
         fixedStroke(l, java.awt.Color.WHITE);
         l.setLocation(-l.getWidth() / 2, l.getAscent() * 0.38);
         cracks = makeCracks(3, r);

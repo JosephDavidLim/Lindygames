@@ -119,6 +119,7 @@ public final class HallucinationCanyon extends GameMap {
 
     @Override public double towerRangeMultiplier(Game game, Tower t) {
         if (stormRemaining <= 0) return 1.0;
+        if (t == null) return 0.5; // placement preview (no tower yet): show the storm penalty
         for (Tower o : game.getTowerManager().getTowers()) {
             if (o.getType().faction == Faction.MILITARY && o.getPosition().dist(t.getPosition()) <= SPECIALIST_RADIUS) return 1.0;
         }

@@ -66,7 +66,7 @@ public final class RadixSortSprite extends EnemySprite {
         spin = lineWidth(fixedStroke(Art.arc(-1.3 * r, -1.3 * r, 2.6 * r, 2.6 * r, 0, 80), PHASE[0]), 2.0);
         gloss(0, 0, 1.7 * r, 1.7 * r);
         place = fixedStroke(new GLabel("1"), Color.WHITE);
-        place.setFont(new Font("SansSerif", Font.BOLD, Math.max(7, (int) Math.round(r * 0.5))));
+        place.setFont(lindefense.ui.Ui.mono(Font.BOLD, Math.max(7, (int) Math.round(r * 0.5))));
         finishOverlays();
         centreLabel();
     }

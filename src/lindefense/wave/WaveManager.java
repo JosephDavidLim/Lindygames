@@ -51,7 +51,7 @@ public class WaveManager {
     public boolean startNextWave() {
         if (!canStartNextWave()) return false;
         currentWave++;
-        current = WaveData.get(currentWave);
+        current = game.getDifficulty().shape(WaveData.get(currentWave), game.getSeed());   // DIFFICULTY HOOK
         waveActive = true;
         waveTime = 0;
         progress.clear();

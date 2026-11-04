@@ -26,6 +26,7 @@ public class Projectile {
     private double travelled;
     private final double maxTravel;
     private boolean alive = true;
+    private double stalled;
     private final double speed;
     private final int rgb;
     private final double size;
@@ -95,6 +96,8 @@ public class Projectile {
         pos = pos.add(step);
         travelled += step.length();
         if (travelled > maxTravel) alive = false;
+        // BUGFIX (found via Difficulty calibration): a zero-velocity clone never travels and would stall wave completion forever.
+        if (step.length() < 1e-6 && (stalled += dt) > 1.0) alive = false;
         return alive;
     }
 }

@@ -37,7 +37,7 @@ public final class Logo {
 
     private static GLabel text(GCompound g, String s, double size, boolean italic, Color c, double cx, double cy) {
         GLabel l = new GLabel(s);
-        l.setFont(new Font("SansSerif", Font.BOLD | (italic ? Font.ITALIC : 0), Math.max(6, (int) Math.round(size))));
+        l.setFont(lindefense.ui.Ui.display(Font.BOLD | (italic ? Font.ITALIC : 0), Math.max(6, (int) Math.round(size))));
         l.setColor(c);
         l.setLocation(cx - l.getWidth() / 2, cy + l.getAscent() * 0.36);
         g.add(l);

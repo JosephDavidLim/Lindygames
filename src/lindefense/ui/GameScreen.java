@@ -276,7 +276,7 @@ public final class GameScreen extends GCompound {
             title = "PAUSED"; col = Cyber.CYAN; micro = "// simulation halted";
             sub = "Press P or the play button to resume.";
         }
-        double pw = 720, ph = ended ? 380 : 270;
+        double pw = 720, ph = ended ? 404 : 270;
         double px = cx - pw / 2, py = cy - ph / 2;
         overlay.add(new Cyber.Chamfer(px, py, pw, ph, 26).fill(new Color(6, 10, 24, 238)).border(col).glow(1.1).lineWidth(2).ticks(true));
         overlay.add(Ui.rect(px + 24, py + 12, 140, 3, Cyber.MAGENTA, Cyber.MAGENTA));
@@ -310,6 +310,12 @@ public final class GameScreen extends GCompound {
                 overlay.add(Ui.label(Cyber.spaced(stats[i][0]), x + 12, cyy + 19, Cyber.mono(Font.BOLD, 9), Cyber.alpha(ac, 210)));
                 overlay.add(Ui.label(stats[i][1], x + 12, cyy + 45, Cyber.mono(Font.BOLD, 20), Cyber.TEXT));
             }
+            // DIFFICULTY HOOK: show the Difficulty Growth mode on the end screen
+            Font modeFont = Cyber.mono(Font.BOLD, 13);
+            GLabel mode = Ui.label("MODE // " + DifficultySelector.display(game.getDifficulty(), modeFont)
+                + "  " + game.getDifficulty().subtitle.toUpperCase(), 0, cyy + 86, modeFont, Cyber.MAGENTA);
+            mode.setLocation(cx - mode.getWidth() / 2, cyy + 86);
+            overlay.add(mode);
             UIButton again = new UIButton(cx - 250, py + ph - 76, 240, 50, "PLAY AGAIN", Cyber.display(Font.BOLD, 22), () -> app.showMapSelect());
             again.setPrimary(true);
             UIButton menu = new UIButton(cx + 10, py + ph - 76, 240, 50, "MAIN MENU", Cyber.display(Font.BOLD, 22), () -> app.showMenu());

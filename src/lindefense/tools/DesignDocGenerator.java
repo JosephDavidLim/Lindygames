@@ -24,6 +24,7 @@ import lindefense.tower.TowerStats;
 import lindefense.tower.TowerType;
 import lindefense.tower.UpgradeDef;
 import lindefense.wave.SpawnGroup;
+import lindefense.sim.Difficulty;
 import lindefense.wave.WaveData;
 import lindefense.wave.WaveDef;
 
@@ -35,8 +36,14 @@ import lindefense.wave.WaveDef;
 public final class DesignDocGenerator {
     private DesignDocGenerator() { }
 
+    /** Mode used for the wave table (O(1) = the base game). */
+    private static Difficulty tableMode = Difficulty.O1;
+
     public static void main(String[] args) throws IOException {
         File out = new File(args.length > 0 ? args[0] : "DESIGN.md");
+        // Optional 2nd arg (or -Ddesign.difficulty): mode whose shaped waves fill the wave table (default O(1) = base game).
+        Difficulty dd = Difficulty.parse(args.length > 1 ? args[1] : System.getProperty("design.difficulty"));
+        if (dd != null) tableMode = dd;
         try (PrintWriter w = new PrintWriter(out, "UTF-8")) {
             write(w);
         }
@@ -68,6 +75,7 @@ public final class DesignDocGenerator {
         w.println("4. [Bosses](#4-bosses)");
         w.println("5. [Maps](#5-maps)");
         w.println("6. [Wave table](#6-wave-table)");
+        w.println("7. [Difficulty Growth](#7-difficulty-growth)");
         w.println();
         globalRules(w);
         towers(w);
@@ -75,6 +83,7 @@ public final class DesignDocGenerator {
         bosses(w);
         maps(w);
         waves(w);
+        difficultyGrowth(w);
     }
 
     private static void globalRules(PrintWriter w) {
@@ -331,9 +340,11 @@ public final class DesignDocGenerator {
         w.println("`N x Type [mods] @interval s from +delay s`. Modifier codes: C = Camo, R = Regrow, F = Fortified. HP x / Speed x / Reward x are the");
         w.println("scales applied to that wave. \"Total incl. splits\" counts every body that will exist if everything is destroyed.");
         w.println();
+        if (!tableMode.isBase()) w.println("_Table shown for difficulty **" + tableMode.asciiLabel + "** (seed 0; HP x includes the mode multiplier)._\n");
         w.println("| Wave | Spawn groups | Initial | Total incl. splits | HP x | Speed x | Reward x | Boss | Notes |");
         w.println("|---|---|---|---|---|---|---|---|---|");
-        for (WaveDef d : WaveData.all()) {
+        for (WaveDef base : WaveData.all()) {
+            WaveDef d = tableMode.shape(base, 0);
             StringBuilder g = new StringBuilder();
             Map<String, Integer> dummy = new LinkedHashMap<>();
             for (SpawnGroup s : d.groups) {
@@ -347,12 +358,68 @@ public final class DesignDocGenerator {
             for (SpawnGroup s : d.groups) total += s.count * bodies(s.type);
             StringBuilder boss = new StringBuilder();
             for (SpawnGroup s : d.groups) if (s.type.isBoss()) { if (boss.length() > 0) boss.append(", "); boss.append(s.count).append(" x ").append(s.type.getBossClass().label); }
-            w.printf("| %d | %s | %d | %d | %s | %s | %s | %s | %s |%n", d.number, g, d.totalSpawns(), total, f(WaveData.hpScale(d.number)),
+            w.printf("| %d | %s | %d | %d | %s | %s | %s | %s | %s |%n", d.number, g, d.totalSpawns(), total, f(WaveData.hpScale(d.number) * tableMode.hpMultiplier(d.number)),
                 f(WaveData.speedScale(d.number)), f(WaveData.rewardScale(d.number)), boss.length() == 0 ? "-" : boss, d.note == null ? "" : d.note);
         }
         w.println();
         w.println("Modifier set used in the campaign: " + usedModifiers());
         w.println();
+    }
+
+    private static void difficultyGrowth(PrintWriter w) {
+        w.println("## 7. Difficulty Growth");
+        w.println();
+        w.println("Four selectable modes (`lindefense.sim.Difficulty`; pick on the map-select screen or `-Dlindefense.difficulty=O1|ON|ON2|ONN`).");
+        w.println("All knobs are relative multipliers on top of the base game. Ramped knobs use `base + (final - base) * growth(wave)` where");
+        w.println("growth is 0 (O(1)), `w/100` (O(N)), `(w/100)^2` (O(N^2)) or `(e^(6w/100) - 1)/(e^6 - 1)` (O(N^N)).");
+        w.println();
+        Difficulty[] ds = Difficulty.values();
+        StringBuilder h = new StringBuilder("| Knob |"), sep = new StringBuilder("|---|");
+        for (Difficulty d : ds) { h.append(' ').append(d.asciiLabel).append(" |"); sep.append("---|"); }
+        w.println(h); w.println(sep);
+        w.print("| Subtitle |"); for (Difficulty d : ds) w.print(" " + d.subtitle + " |"); w.println();
+        w.print("| Growth curve |"); for (Difficulty d : ds) w.print(" " + d.curve.name().toLowerCase() + " |"); w.println();
+        w.print("| Enemy HP x (wave 1 -> 100) |"); for (Difficulty d : ds) w.print(" " + f(d.hpBase) + " -> " + f(d.hpFinal) + " |"); w.println();
+        w.print("| Enemy count x (wave 1 -> 100) |"); for (Difficulty d : ds) w.print(" " + f(d.countBase) + " -> " + f(d.countFinal) + " |"); w.println();
+        w.print("| Tower damage x (flat) |"); for (Difficulty d : ds) w.print(" " + f(d.towerDamage) + " |"); w.println();
+        w.print("| Income x (kill rewards + wave bonus, flat) |"); for (Difficulty d : ds) w.print(" " + f(d.income) + " |"); w.println();
+        w.print("| Elite chance per spawn (wave 1 -> 100) |"); for (Difficulty d : ds) w.print(" " + (d.eliteFinal == 0 ? "-" : pct(d.eliteBase) + " -> " + pct(d.eliteFinal)) + " |"); w.println();
+        w.print("| Elite extra modifiers |"); for (Difficulty d : ds) w.print(" " + (d.eliteFinal == 0 ? "-" : d.eliteMods + " of Camo/Regrow/Fortified") + " |"); w.println();
+        w.print("| Elite promotion to tougher type |"); for (Difficulty d : ds) w.print(" " + (d.eliteFinal == 0 ? "-" : pct(d.promoteChance) + " of elites") + " |"); w.println();
+        w.print("| Starting cash x / lives x |"); for (Difficulty d : ds) w.print(" " + f(d.startCashMult) + " / " + f(d.startLivesMult) + " |"); w.println();
+        w.print("| Extra bosses |"); for (Difficulty d : ds) w.print(" " + (d.getExtraBosses().isEmpty() ? "-" : d.getExtraBosses().size() + " groups (below)") + " |"); w.println();
+        w.println();
+        w.println("Elites: each non-boss spawn is an elite with the chance above (deterministic from game seed + wave + group). Elites are split into their own");
+        w.println("spawn group with extra random modifiers and, for some, a promotion to a tougher type (e.g. Quick Sort -> Heap Sort). Enemy counts are");
+        w.println("rounded stochastically (deterministic per seed, minimum 1) and spawn intervals shrink by `1 + 0.5 (countMult - 1)`. Bosses already in the wave are never multiplied.");
+        w.println("Palantir does not receive the ramped HP multiplier: its HP is multiplied by `towerDamage x (1 + 0.03 x tier)` so the final fight takes about as long as in O(1) (a DPS check, not a wall).");
+        w.println("Kill rewards and the wave bonus are both scaled by the income multiplier (research-tower income is not). Any mode can be tried with `-Dlindefense.difficulty=O1|ON|ON2|ONN`.");
+        w.println();
+        w.println("**Balance-bot calibration** (AutoPlayer, seed 1234, maps in catalog order; W = victory with lives left, L = defeat on that wave).");
+        w.println("Tower stats are expected to change, so re-run `AutoPlayer` with `-Dbot.difficulty=...` after any rebalance; the multipliers are relative, so the tier spacing should hold.");
+        w.println();
+        w.println("| Mode | Near-optimal bot, seed 1234 | Near-optimal bot, seeds 7 / 99 (O(N^N) only) |");
+        w.println("|---|---|---|");
+        w.println("| O(1) | W100 / W100 / W100 / W100 | - |");
+        w.println("| O(N) | W96 / W100 / W100 / W100 | - |");
+        w.println("| O(N^2) | W77 / W99 / W80 / W95 | - |");
+        w.println("| O(N^N) | W52 / W60 / W44 / L88 | W50 / W58 / W43 / L93 ; W50 / W57 / W45 / L98 |");
+        w.println();
+        w.println("O(N^N) is tuned so a near-optimal defence wins 9 of 12 map/seed runs; every loss is on The Singularity Core in waves 88-98.");
+        w.println("A flat 3x enemy HP from wave 1 (with half income) was tried and is unwinnable (the bot falls by wave 10-13), so HP ramps to 3x instead");
+        w.println("and O(N^N) starts with double cash. Capped/random-bot rows were not re-run after the income retune.");
+        w.println();
+        for (Difficulty d : ds) {
+            if (d.getExtraBosses().isEmpty()) continue;
+            w.println("**Extra bosses, " + d.asciiLabel + "** (added to the wave's normal groups; they split normally, Palantir is never duplicated):");
+            w.println();
+            w.println("| Wave | Boss | Count | Modifiers | Start / interval |");
+            w.println("|---|---|---|---|---|");
+            for (Difficulty.ExtraBoss b : d.getExtraBosses()) {
+                w.println("| " + b.wave + " | " + b.type.displayName + " (" + b.type.getBossClass().label + ") | " + b.count + " | " + (b.mods == null ? "-" : b.mods) + " | +" + f(b.startDelay) + "s / " + f(b.interval) + "s |");
+            }
+            w.println();
+        }
     }
 
     /** Number of bodies produced by one enemy of this type including all descendants. */

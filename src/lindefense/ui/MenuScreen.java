@@ -111,7 +111,7 @@ public final class MenuScreen extends GCompound {
         emblem.setLocation(800, 150);
         add(emblem);
 
-        subtitle = Ui.label(spaced("AI TOWER DEFENSE"), 0, 0, menuFont(Font.BOLD, 26), CYAN);
+        subtitle = Ui.label(spaced("THE LAST LINE OF CODE"), 0, 0, menuFont(Font.BOLD, 26), CYAN);
         subtitle.setLocation((Ui.W - subtitle.getWidth()) / 2, 428);
         add(subtitle);
         tagline = Ui.label(spaced("DEPLOY. UPGRADE. DEFEND."), 0, 0, menuFont(Font.PLAIN, 14), Ui.withAlpha(MAGENTA, 220));
@@ -137,7 +137,7 @@ public final class MenuScreen extends GCompound {
         Font mono = Cyber.mono(Font.BOLD, 14);
         sysLabel = Ui.label("SYS.ONLINE  •", 44, 52, mono, new Color(0x3bff8a));
         threatLabel = Ui.label("THREAT LVL: PALANTIR", 44, Ui.H - 40, mono, MAGENTA);
-        verLabel = Ui.label("v0.1 ALPHA", Ui.W - 150, 52, mono, YELLOW);
+        verLabel = Ui.label(lindefense.Version.LABEL, Ui.W - 150, 52, mono, YELLOW);
         tickerLabel = Ui.label("LINDEFENSE // 100 WAVES // 20 MODELS // 4 MAPS", 0, Ui.H - 40, mono, Ui.withAlpha(CYAN, 200));
         tickerLabel.setLocation(Ui.W - 44 - tickerLabel.getWidth(), Ui.H - 40);
         add(sysLabel); add(threatLabel); add(verLabel); add(tickerLabel);

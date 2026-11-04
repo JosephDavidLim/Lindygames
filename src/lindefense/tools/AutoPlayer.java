@@ -5,6 +5,7 @@ import java.util.List;
 import lindefense.map.GameMap;
 import lindefense.map.MapCatalog;
 import lindefense.map.Path;
+import lindefense.sim.Difficulty;
 import lindefense.sim.Game;
 import lindefense.sim.Vec;
 import lindefense.tower.Tower;
@@ -39,8 +40,15 @@ public final class AutoPlayer {
         for (int m = 0; m < MapCatalog.MAP_COUNT; m++) if (only < 0 || only == m) play(m, maxWaves, args.length > 2);
     }
 
+    /** Difficulty from {@code -Dbot.difficulty=O1|ON|ON2|ONN} (falls back to -Dlindefense.difficulty, then O(1)). */
+    private static Difficulty botDifficulty() {
+        Difficulty d = Difficulty.parse(System.getProperty("bot.difficulty"));
+        return d != null ? d : Difficulty.defaultMode();
+    }
+
     static void play(int mapIdx, int maxWaves, boolean verbose) {
-        Game g = new Game(MapCatalog.create(mapIdx), 1234);
+        Difficulty diff = botDifficulty();
+        Game g = new Game(MapCatalog.create(mapIdx), Long.getLong("bot.seed", 1234L), diff);
         GameMap map = g.getMap();
         List<Vec> samples = new ArrayList<>();
         for (Path r : map.getRoutes()) for (double d = 0; d < r.getTotalLength(); d += 20) samples.add(r.positionAt(d));
@@ -53,7 +61,7 @@ public final class AutoPlayer {
         int ticks = 0;
         int lastReport = 0;
         StringBuilder sb = new StringBuilder();
-        while (g.getState() == Game.State.PLAYING && ticks < 60 * 60 * 90) {
+        while (g.getState() == Game.State.PLAYING && ticks < 60 * 60 * Integer.getInteger("bot.maxMinutes", 90)) {
             if (ticks % 30 == 0) manage(g, spots, samples);
             if (g.getWaveManager().canStartNextWave() && g.getWave() < maxWaves) {
                 // short prep: wait until projectiles clear, then go
@@ -64,16 +72,22 @@ public final class AutoPlayer {
             g.step(Game.DT);
             g.getEvents().clear();
             ticks++;
-            if (g.getLastCompletedWave() != lastReport && g.getLastCompletedWave() % 10 == 0) {
+            if (g.getLastCompletedWave() != lastReport && g.getLastCompletedWave() % Integer.getInteger("bot.reportEvery", 10) == 0) {
                 lastReport = g.getLastCompletedWave();
                 sb.append(String.format("    after wave %3d: lives %3d cash %7.0f towers %2d (T4: %d)%n", lastReport, g.getLives(), g.getCash(),
                     g.getTowerManager().getPlayerTowers().size(), countT3(g)));
             }
         }
+        System.out.printf("[%s] ", diff.label);
         System.out.printf("%s: state=%s reached wave %d (completed %d), lives=%d, cash=%.0f, towers=%d, sim %.0fs, real %dms%n",
             map.getName(), g.getState(), g.getWave(), g.getLastCompletedWave(), g.getLives(), g.getCash(),
             g.getTowerManager().getPlayerTowers().size(), g.getTime(), System.currentTimeMillis() - t0);
         System.out.print(sb);
+        if (g.getState() == Game.State.PLAYING) {
+            System.out.println("    still playing: toSpawn=" + g.getWaveManager().getRemainingToSpawn() + " alive=" + g.getEnemyManager().getAliveCount()
+                + " projectiles=" + g.getCombat().getProjectiles().size());
+            for (lindefense.combat.Projectile pr : g.getCombat().getProjectiles()) System.out.println("      " + pr.getSource().getType() + " pos=" + pr.getPosition() + " vel=" + pr.getVelocity() + " target=" + pr.getTarget());
+        }
         if (!g.getEnemyManager().getEnemies().isEmpty()) {
             System.out.println("    remaining enemies (" + g.getEnemyManager().getEnemies().size() + "), wave time " + g.getWaveManager().getWaveTime() + ":");
             int shown = 0;

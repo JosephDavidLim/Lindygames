@@ -15,6 +15,7 @@ the data classes named above and can be replaced without touching game logic.
 4. [Bosses](#4-bosses)
 5. [Maps](#5-maps)
 6. [Wave table](#6-wave-table)
+7. [Difficulty Growth](#7-difficulty-growth)
 
 ## 1. Global rules
 
@@ -627,4 +628,63 @@ scales applied to that wave. "Total incl. splits" counts every body that will ex
 | 100 | 1 x Palantir @1s from +8s<br>4 x Lockheed Martin @6s from +30s<br>8 x Bellarmine College Prep [Fortified] @4s from +45s | 13 | 157 | 6 | 1.3 | 0.2 | 1 x BAD, 4 x DDT, 8 x MOAB | FINAL BOSS: Palantir (BAD). Three phases, Predictive Surveillance. Victory when its body is destroyed. |
 
 Modifier set used in the campaign: Camo (first wave 24), Regrow (first wave 14), Fortified (first wave 28)
+
+## 7. Difficulty Growth
+
+Four selectable modes (`lindefense.sim.Difficulty`; pick on the map-select screen or `-Dlindefense.difficulty=O1|ON|ON2|ONN`).
+All knobs are relative multipliers on top of the base game. Ramped knobs use `base + (final - base) * growth(wave)` where
+growth is 0 (O(1)), `w/100` (O(N)), `(w/100)^2` (O(N^2)) or `(e^(6w/100) - 1)/(e^6 - 1)` (O(N^N)).
+
+| Knob | O(1) | O(N) | O(N^2) | O(N^N) |
+|---|---|---|---|---|
+| Subtitle | Constant (current) | Linear (Normal) | Quadratic (Hard) | Super-exponential (Impossible) |
+| Growth curve | flat | linear | quadratic | superexp |
+| Enemy HP x (wave 1 -> 100) | 1 -> 1 | 1.1 -> 1.5 | 1.2 -> 2.2 | 1.3 -> 3 |
+| Enemy count x (wave 1 -> 100) | 1 -> 1 | 1.1 -> 1.4 | 1.2 -> 2.3 | 1.3 -> 2.4 |
+| Tower damage x (flat) | 1 | 0.92 | 0.86 | 0.75 |
+| Income x (kill rewards + wave bonus, flat) | 1 | 0.8 | 0.6 | 0.5 |
+| Elite chance per spawn (wave 1 -> 100) | - | - | 3% -> 60% | 5% -> 60% |
+| Elite extra modifiers | - | - | 1 of Camo/Regrow/Fortified | 2 of Camo/Regrow/Fortified |
+| Elite promotion to tougher type | - | - | 35% of elites | 50% of elites |
+| Starting cash x / lives x | 1 / 1 | 1 / 1 | 1 / 1 | 2 / 1 |
+| Extra bosses | - | - | - | 14 groups (below) |
+
+Elites: each non-boss spawn is an elite with the chance above (deterministic from game seed + wave + group). Elites are split into their own
+spawn group with extra random modifiers and, for some, a promotion to a tougher type (e.g. Quick Sort -> Heap Sort). Enemy counts are
+rounded stochastically (deterministic per seed, minimum 1) and spawn intervals shrink by `1 + 0.5 (countMult - 1)`. Bosses already in the wave are never multiplied.
+Palantir does not receive the ramped HP multiplier: its HP is multiplied by `towerDamage x (1 + 0.03 x tier)` so the final fight takes about as long as in O(1) (a DPS check, not a wall).
+Kill rewards and the wave bonus are both scaled by the income multiplier (research-tower income is not). Any mode can be tried with `-Dlindefense.difficulty=O1|ON|ON2|ONN`.
+
+**Balance-bot calibration** (AutoPlayer, seed 1234, maps in catalog order; W = victory with lives left, L = defeat on that wave).
+Tower stats are expected to change, so re-run `AutoPlayer` with `-Dbot.difficulty=...` after any rebalance; the multipliers are relative, so the tier spacing should hold.
+
+| Mode | Near-optimal bot, seed 1234 | Near-optimal bot, seeds 7 / 99 (O(N^N) only) |
+|---|---|---|
+| O(1) | W100 / W100 / W100 / W100 | - |
+| O(N) | W96 / W100 / W100 / W100 | - |
+| O(N^2) | W77 / W99 / W80 / W95 | - |
+| O(N^N) | W52 / W60 / W44 / L88 | W50 / W58 / W43 / L93 ; W50 / W57 / W45 / L98 |
+
+O(N^N) is tuned so a near-optimal defence wins 9 of 12 map/seed runs; every loss is on The Singularity Core in waves 88-98.
+A flat 3x enemy HP from wave 1 (with half income) was tried and is unwinnable (the bot falls by wave 10-13), so HP ramps to 3x instead
+and O(N^N) starts with double cash. Capped/random-bot rows were not re-run after the income retune.
+
+**Extra bosses, O(N^N)** (added to the wave's normal groups; they split normally, Palantir is never duplicated):
+
+| Wave | Boss | Count | Modifiers | Start / interval |
+|---|---|---|---|---|
+| 25 | Bellarmine College Prep (MOAB) | 1 | - | +12s / 1s |
+| 35 | Bellarmine College Prep (MOAB) | 1 | - | +10s / 1s |
+| 45 | Bellarmine College Prep (MOAB) | 2 | - | +10s / 6s |
+| 50 | SW Resource Consultant (BFB) | 1 | - | +12s / 1s |
+| 60 | SW Resource Consultant (BFB) | 1 | - | +20s / 1s |
+| 70 | SW Resource Consultant (BFB) | 2 | - | +15s / 10s |
+| 75 | Bellarmine College Prep (MOAB) | 4 | F | +8s / 4s |
+| 80 | 3Com (ZOMG) | 1 | - | +25s / 1s |
+| 85 | SW Resource Consultant (BFB) | 2 | F | +12s / 8s |
+| 90 | Lockheed Martin (DDT) | 2 | - | +12s / 6s |
+| 95 | 3Com (ZOMG) | 1 | - | +20s / 1s |
+| 97 | Lockheed Martin (DDT) | 2 | - | +10s / 6s |
+| 99 | SW Resource Consultant (BFB) | 2 | - | +15s / 8s |
+| 100 | Lockheed Martin (DDT) | 2 | F | +12s / 8s |
 

@@ -33,8 +33,8 @@ public class TowerGallery extends GraphicsProgram {
     private static final long serialVersionUID = 1L;
     private static final Color BG = new Color(0x3f8f4f);
     private static final Color BG2 = new Color(0x4a9c5a);
-    private static final Font F = new Font("SansSerif", Font.BOLD, 12);
-    private static final Font FS = new Font("SansSerif", Font.PLAIN, 10);
+    private static final Font F = lindefense.ui.Ui.body(Font.BOLD, 12);
+    private static final Font FS = lindefense.ui.Ui.body(Font.PLAIN, 10);
 
     private final List<TowerSprite> sprites = new ArrayList<>();
     private final List<Tower> towers = new ArrayList<>();

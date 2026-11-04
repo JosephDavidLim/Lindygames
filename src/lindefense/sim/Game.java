@@ -45,6 +45,8 @@ public final class Game {
     private State state = State.PLAYING;
     private double cash = START_CASH;
     private int lives = START_LIVES;
+    private final Difficulty difficulty;   // DIFFICULTY HOOK: chosen mode (see Difficulty)
+    private final long seed;
     private double time;
     private int tick;
     private int speed = 1;
@@ -62,7 +64,13 @@ public final class Game {
     private double globalEnemySpeedMultiplier = 1.0;
     private boolean invincible;
 
-    public Game(GameMap map, long seed) {
+    public Game(GameMap map, long seed) { this(map, seed, Difficulty.defaultMode()); }
+
+    public Game(GameMap map, long seed, Difficulty difficulty) {
+        this.difficulty = difficulty;   // DIFFICULTY HOOK
+        this.seed = seed;
+        this.cash = difficulty.startCash(START_CASH);
+        this.lives = difficulty.startLives(START_LIVES);
         this.map = map;
         this.rng = new Rng(seed);
         this.enemyManager = new EnemyManager(this);
@@ -75,6 +83,8 @@ public final class Game {
 
     // ---------------- accessors ----------------
     public GameMap getMap() { return map; }
+    public Difficulty getDifficulty() { return difficulty; }   // DIFFICULTY HOOK
+    public long getSeed() { return seed; }
     public Rng getRng() { return rng; }
     public EnemyManager getEnemyManager() { return enemyManager; }
     public TowerManager getTowerManager() { return towerManager; }
@@ -99,7 +109,7 @@ public final class Game {
     public String getBanner() { return bannerTime > 0 ? banner : null; }
     public int getBannerRgb() { return bannerRgb; }
     public double getGlobalRateMultiplier() { return 1.0; }
-    public double getGlobalDamageMultiplier() { return 1.0; }
+    public double getGlobalDamageMultiplier() { return difficulty.towerDamage; }   // DIFFICULTY HOOK
     public double getGlobalEnemySpeedMultiplier() { return globalEnemySpeedMultiplier; }
     public void setGlobalEnemySpeedMultiplier(double m) { globalEnemySpeedMultiplier = m; }
     /** Test/debug only: leaks still subtract lives but never trigger defeat. */
@@ -107,9 +117,13 @@ public final class Game {
     public boolean isInvincible() { return invincible; }
 
     /** HP scale for enemies spawned now (based on the current wave). */
-    public double getWaveHpScale() { return WaveData.hpScale(Math.max(1, getWave())); }
+    public double getWaveHpScale() { return WaveData.hpScale(Math.max(1, getWave())) * difficulty.hpMultiplier(Math.max(1, getWave())); }   // DIFFICULTY HOOK
+    /** Type-aware HP scale used when spawning (DIFFICULTY HOOK: Palantir gets a reduced share of the mode's HP bonus). */
+    public double getWaveHpScale(EnemyType type) {
+        return WaveData.hpScale(Math.max(1, getWave())) * difficulty.hpMultiplier(Math.max(1, getWave()), type);
+    }
     public double getWaveSpeedScale() { return WaveData.speedScale(Math.max(1, getWave())); }
-    public double getRewardScale() { return WaveData.rewardScale(Math.max(1, getWave())); }
+    public double getRewardScale() { return WaveData.rewardScale(Math.max(1, getWave())) * difficulty.income; }   // DIFFICULTY HOOK
 
     public void setSpeed(int s) { speed = Math.max(1, Math.min(3, s)); }
     public void setPaused(boolean p) { paused = p; }
@@ -228,7 +242,7 @@ public final class Game {
 
     public void onWaveCompleted(int wave, WaveDef def) {
         lastCompletedWave = wave;
-        int bonus = WaveData.waveBonus(wave);
+        int bonus = (int) Math.round(WaveData.waveBonus(wave) * difficulty.income);   // DIFFICULTY HOOK
         double income = 0;
         for (Tower t : towerManager.getTowers()) income += t.getStats().incomePerWave;
         addCash(bonus + income, null);

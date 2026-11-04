@@ -100,7 +100,7 @@ public abstract class GameMap {
     /** Extra speed multiplier for an enemy from map mechanics. */
     public double enemySpeedMultiplier(Enemy e) { return 1.0; }
 
-    /** Extra range multiplier for a tower from map mechanics. */
+    /** Extra range multiplier for a tower from map mechanics. {@code t} is null for the placement preview. */
     public double towerRangeMultiplier(Game game, Tower t) { return 1.0; }
 
     /** Extra attack-rate multiplier for a tower from map mechanics. */

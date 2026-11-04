@@ -138,7 +138,7 @@ public final class HudPanel extends GCompound {
         bedge2.setColor(Cyber.alpha(Cyber.MAGENTA, 170));
         add(bedge2);
         double by = Ui.BOTTOM_Y;
-        mapMicro = Ui.label(Cyber.spaced("sector"), 18, by + 18, CHIP_LABEL, Cyber.alpha(Cyber.CYAN, 200));
+        mapMicro = Ui.label(Cyber.spaced("sector") + "   //   MODE " + DifficultySelector.display(game.getDifficulty(), CHIP_LABEL), 18, by + 18, CHIP_LABEL, Cyber.alpha(Cyber.CYAN, 200));   // DIFFICULTY HOOK: mode in HUD
         mapName = Ui.label(game.getMap().getName().toUpperCase(), 18, by + 40, Cyber.display(Font.BOLD, 20), Cyber.TEXT);
         add(mapMicro); add(mapName);
         eventLabel = Ui.label("", 0, by + 22, Cyber.mono(Font.BOLD, 13), Cyber.MAGENTA);

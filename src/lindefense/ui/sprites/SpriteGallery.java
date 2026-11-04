@@ -77,7 +77,7 @@ public class SpriteGallery extends GraphicsProgram {
 
     private void label(String text, double x, double y, int size, Color c) {
         GLabel l = new GLabel(text, x, y);
-        l.setFont(new Font("SansSerif", Font.PLAIN, size));
+        l.setFont(lindefense.ui.Ui.body(Font.PLAIN, size));
         l.setColor(c);
         add(l);
     }
@@ -187,11 +187,6 @@ public class SpriteGallery extends GraphicsProgram {
         fx.add(pd);
 
         String shots = System.getProperty("gallery.shots");
-        if (shots != null) {
-            // keep the window on top while capturing so other windows cannot occlude the grab
-            java.awt.Window w = javax.swing.SwingUtilities.getWindowAncestor(canvas);
-            if (w != null) { w.setAlwaysOnTop(true); w.toFront(); }
-        }
         double[] shotTimes = { 1.2, 2.0, 2.6, 3.3, 5.3, 6.4, 8.2 };
         int shot = 0;
         double dt = 1.0 / 60;
@@ -242,31 +237,15 @@ public class SpriteGallery extends GraphicsProgram {
     private static void capture(GCanvas canvas, File file) {
         try {
             file.getParentFile().mkdirs();
-            BufferedImage img = null;
-            try {
-                java.awt.Window w = javax.swing.SwingUtilities.getWindowAncestor(canvas);
-                if (w != null) w.toFront();
-                java.awt.Point p = canvas.getLocationOnScreen();
-                java.awt.Rectangle rect = new java.awt.Rectangle(p, canvas.getSize());
-                java.awt.Image best = null;
-                for (java.awt.Image v : new java.awt.Robot().createMultiResolutionScreenCapture(rect).getResolutionVariants()) {
-                    if (best == null || v.getWidth(null) > best.getWidth(null)) best = v;
-                }
-                if (best != null) {
-                    img = new BufferedImage(best.getWidth(null), best.getHeight(null), BufferedImage.TYPE_INT_RGB);
-                    Graphics2D g = img.createGraphics();
-                    g.drawImage(best, 0, 0, null);
-                    g.dispose();
-                }
-            } catch (Exception robotFailed) {
-                System.err.println("robot capture failed, painting offscreen instead: " + robotFailed);
-            }
-            if (img == null) {
-                img = new BufferedImage(Math.max(1, canvas.getWidth()), Math.max(1, canvas.getHeight()), BufferedImage.TYPE_INT_RGB);
-                Graphics2D g = img.createGraphics();
-                canvas.paint(g);
-                g.dispose();
-            }
+            // Offscreen render of the gallery canvas only (2x for Retina-like detail). Deliberately no screen
+            // capture: a screen grab can record whatever else is on the user's display.
+            BufferedImage img = new BufferedImage(Math.max(1, canvas.getWidth() * 2), Math.max(1, canvas.getHeight() * 2), BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = img.createGraphics();
+            g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(java.awt.RenderingHints.KEY_TEXT_ANTIALIASING, java.awt.RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+            g.scale(2, 2);
+            canvas.paint(g);
+            g.dispose();
             ImageIO.write(img, "png", file);
             System.out.println("wrote " + file.getAbsolutePath());
         } catch (Exception ex) {
