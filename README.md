@@ -1,14 +1,16 @@
 # Lindefense - The Last Line of Code
 
-**Version: beta 1.0**
+**Version: beta 1.1**
 
 ![Lindefense title card](docs/titlecard.png)
 
 Lindefense is a complete, playable tower-defense game written in Java with the Stanford ACM Graphics
 library (`GCanvas`, `GCompound`, `GOval`, `GRect`, `GPolygon`, `GLine`, `GLabel`). You defend a track
-with 20 real AI models and companies (3 heroes + 17 towers) against 100 waves of computer-science
-enemies - data structures, sorting algorithms and five corporate MOAB-class bosses - ending with the
-BAD-class final boss **Palantir** on Wave 100.
+with 18 towers (17 AI models and companies plus **Zethos, the Quantum Architect**) and six unlockable
+**Hero Store** heroes against 100 waves of computer-science enemies - data structures, sorting
+algorithms and five corporate MOAB-class bosses - ending with the BAD-class final boss **Palantir** on
+Wave 100. New players can start with the guided **Tutorial**; the **Catalog** on the main menu
+explains every enemy, tower and hero.
 
 The window opens large (about 92% of your screen) and is freely resizable: the whole game scales to
 fit whatever size you drag it to.
@@ -192,6 +194,7 @@ bot loses mid-game in every mode. Full tables are in DESIGN.md section 7; re-run
 | `S` | Sell the selected tower (70% refund) |
 | `A` | Fire the selected tower's ability |
 | `T` | Cycle targeting priority (First / Last / Strongest / Weakest / Closest) |
+| `K` / **HEROES** button | Open / close the Hero Store (buy heroes, deploy unlocked ones) |
 | `M` / `N` | Toggle **M**usic / sou**N**d (also speaker and note buttons on the main menu, map select and the pause menu) |
 | `H` / **? HELP** button | Open the in-game help overlay (full controls, modifiers, economy, bosses) |
 | **Auto** button | Auto-start the next wave 8 s after the current one is cleared |
@@ -272,13 +275,18 @@ ffmpeg -i input.mp4 -vn -t 90 -ar 22050 -ac 2 -c:a pcm_mulaw assets/music/menu.w
   after, because the 20-tower roster costs several times the original one. Enemy HP scale is flat to wave 60, 1.1x at 80 and
   1.3x at 100 for every enemy, bosses included; boss base HPs are their debut-wave values (MOAB 1,500, BFB 7,500, ZOMG 8,000,
   DDT 1,000, Palantir 50,000), so no enemy gets weaker as the waves go on (DESIGN.md section 1 and 4).
-- Every tower has a base form and **exactly three upgrades** named after its model lineup in order of
+- Every original tower has a base form and **exactly three upgrades** named after its model lineup in order of
   model intelligence - upgrading Claude buys "Claude Sonnet 5.5", then "Claude Opus 5.5" and finally
-  "Claude Fable 5.1" (heroes use their own tier names). Each tower also has a unique
-  **active ability** (usable from placement, starting at 50% cooldown; gold ring = ready, bar = cooling
-  down), configurable **targeting** (Grok U2+ adds Densest Cluster), and sells for 70% of everything spent
-  on it. Only one copy of each hero can be placed.
-- **Modifiers**: *Camo* enemies cannot be targeted without detection (Bellarmine Student + AI, Grok,
+  "Claude Fable 5.1". The original towers are **passive** (no active abilities). **Zethos** (Primary, $650)
+  has **four** upgrades ($350 / $650 / $1,200 / $2,500, $5,350 in total) and the Reality Collapse ability.
+  Towers have configurable **targeting** (Grok U2+ adds Densest Cluster) and sell for 70% of everything spent.
+- **Hero Store** (`HEROES` button or `K`): six heroes - Brad Lindemann ($1,800), Brandon ($1,100), Rohan
+  ($1,300), Ronil ($1,500), Shashank ($1,000) and Owen ($1,400). Everyone starts with none. Buying one with
+  match cash unlocks it **permanently** (saved with `java.util.prefs`, node `lindefense/heroes`); unlocked
+  heroes deploy **for free, once per match** (dismissing one does not give the deployment back). Heroes have
+  no upgrades; each has an **active ability** (usable from deployment at 50% cooldown; ring = cooldown).
+  The heroes' and Zethos's ranges, radii and projectile speeds are specified in map units (1 unit = 4 px).
+- **Modifiers**: *Camo* enemies cannot be targeted without detection (Grok,
   Perplexity or its aura, Gemini U2, Llama U2). *Regrow* enemies heal 1 HP every 2 s.
   *Fortified* enemies have double HP (Qwen's ability strips it from airships).
 - **Damage types** (see DESIGN.md): Sharp cannot hurt *Lead-type* enemies (Heap Sort, Lockheed Martin,
@@ -296,8 +304,8 @@ ffmpeg -i input.mp4 -vn -t 90 -ar 22050 -ac 2 -c:a pcm_mulaw assets/music/menu.w
 
 | Faction | Towers | Role |
 |---|---|---|
-| Heroes | Bellarmine Student, Bellarmine Student + AI, Brad Lindemann | Blunt melee-ranged hybrid; autonomous homing hybrid with detection; commander support and heavy artillery (most expensive unit by far) |
-| Primary | Gemini, Claude, GPT | Chain lightning vs groups; piercing + slowing crowd control; adaptive all-rounder |
+| Heroes (Hero Store) | Brad Lindemann, Brandon, Rohan, Ronil, Shashank, Owen | Splash + chain-lightning commander; rapid-fire piercing gunner; freeze / slow crowd control; long-range meteor artillery; economy + damage-vulnerability support; autonomous drone squadron |
+| Primary | Gemini, Claude, GPT, Zethos | Chain lightning vs groups; piercing + slowing crowd control; adaptive all-rounder; piercing / splashing / bouncing quantum projectiles (four upgrades) |
 | Military | DeepSeek, Copilot | Railgun vs complex enemies/bosses; attack-speed aura (double for Military) and Surveillance firewall |
 | Magic | DALL-E, Sora, Suno | Splash + Sprite summons; time-slowing pulses; sonic pulses vs dense groups |
 | Support | Grok, Perplexity | Disruption of enemy mechanics; camo detection, marks and income |

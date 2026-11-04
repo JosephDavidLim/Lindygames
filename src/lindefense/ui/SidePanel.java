@@ -91,8 +91,8 @@ public final class SidePanel extends GCompound {
         add(helpBtn);
 
         double x = Ui.PANEL_X + 8;
-        double tabW = 51;
-        for (Faction f : Faction.values()) {
+        double tabW = 60;
+        for (Faction f : ShopLayout.shopFactions()) {
             UIButton b = new UIButton(x, 40, tabW, 30, f.label.toUpperCase(), Cyber.display(Font.BOLD, 12), () -> setTab(f));
             b.setAccent(Ui.c(f.rgb));
             tabButtons.add(b);
@@ -137,7 +137,7 @@ public final class SidePanel extends GCompound {
 
     // ------------------------------------------------------------------ shop cards
     private void rebuildCards() {
-        for (int i = 0; i < tabButtons.size(); i++) tabButtons.get(i).setSelected(!allMode && Faction.values()[i] == tab);
+        for (int i = 0; i < tabButtons.size(); i++) tabButtons.get(i).setSelected(!allMode && ShopLayout.shopFactions().get(i) == tab);
         allButton.setSelected(allMode);
         cardLayer.removeAll();
         cards.clear();
@@ -212,13 +212,13 @@ public final class SidePanel extends GCompound {
         double avail = Ui.H - 8 - BRIEF_H - 12 - ShopLayout.CARDS_Y;
         if (allMode) {
             double h = ShopLayout.ALL_ROW_H;
-            if (!compactShop) h = Math.max(h, Math.min(84, (avail - 5 * ShopLayout.ALL_GROUP_GAP) / 8 - ShopLayout.ALL_ROW_GAP));
+            if (!compactShop) h = Math.max(h, Math.min(84, (avail - 4 * ShopLayout.ALL_GROUP_GAP) / 7 - ShopLayout.ALL_ROW_GAP));
             return ShopLayout.allCells(h);
         }
         double h = ShopLayout.CARD_H;
         if (!compactShop) {
             int n = 0;
-            for (TowerType t : TowerType.purchasable()) if (t.faction == tab) n++;
+            for (TowerType t : TowerType.shopTowers()) if (t.faction == tab) n++;
             int rows = Math.max(1, (n + 1) / 2);
             h = Math.max(h, Math.min(140, (avail - ShopLayout.CARD_GAP) / rows - ShopLayout.CARD_GAP));
         }
@@ -227,12 +227,7 @@ public final class SidePanel extends GCompound {
 
     /** Compact label for the dense ALL grid (full name is shown in the tooltip and info panel). */
     private static String shortLabel(TowerType t) {
-        switch (t) {
-            case BELLARMINE_STUDENT: return "Student";
-            case BELLARMINE_STUDENT_AI: return "Student + AI";
-            case BRAD_LINDEMANN: return "B. Lindemann";
-            default: return t.displayName;
-        }
+        return t.displayName;
     }
 
     /** Shop icon: the tower's tier-0 art in a size x size box with top-left (x, y). */
@@ -520,7 +515,7 @@ public final class SidePanel extends GCompound {
     private void buildShopInfo(TowerType type) {
         TowerDef d = TowerCatalog.get(type);
         Color tc = Cyber.lerp(Ui.c(type.primaryRgb), Color.WHITE, 0.3);
-        header(type.displayName, tc, Ui.money(d.baseCost), Cyber.YELLOW);
+        header(type.displayName, tc, type.isHero() ? "HERO // DEPLOY" : Ui.money(d.baseCost), Cyber.YELLOW);
         y += 4;
         put(d.subtitle + "  //  " + type.faction.label.toUpperCase(), x0, y + 12, F_TXT, Ui.c(type.faction.rgb));
         y += 14;
@@ -530,8 +525,8 @@ public final class SidePanel extends GCompound {
         if (s.kind != AttackKind.NONE) {
             double yy = y;
             statCell(x0, yy, "damage", () -> Ui.fmt(s.hit.damage), Cyber.TEXT);
-            statCell(x0 + 180, yy, "fire rate", () -> Ui.fmt(s.rate) + "/s", Cyber.TEXT);
-            statCell(x0, yy + 34, "range", () -> String.valueOf((int) s.range), Cyber.TEXT);
+            statCell(x0 + 180, yy, "interval", () -> Ui.fmt(s.interval()) + "s", Cyber.TEXT);
+            statCell(x0, yy + 34, "range", () -> HeroStatText.range(type, s.range), Cyber.TEXT);
             statCell(x0 + 180, yy + 34, modeLabel(s), () -> modeText(s), Cyber.TEXT);
             y += 68;
             String fx = effectsText(s, true);
@@ -543,7 +538,7 @@ public final class SidePanel extends GCompound {
         }
         String sup = supportText(s, s.seesCamo);
         if (!sup.isEmpty()) para(sup, F_TXT_S, Cyber.CYAN, 3);
-        section("upgrade path");
+        if (d.upgrades.length > 0) section("upgrade path");
         for (int i = 0; i < d.upgrades.length; i++) {
             UpgradeDef u = d.upgrades[i];
             y += 15;
@@ -560,7 +555,7 @@ public final class SidePanel extends GCompound {
             para(d.ability.description, F_TXT_S, Cyber.MUTED, 3);
         }
         y += 12;
-        para("Click a free spot on the map. Right-click or Esc to cancel.", F_TXT_S, Cyber.CYAN, 1);
+        para(type.isHero() ? "Click a free spot to deploy (free, once per match). Esc cancels." : "Click a free spot on the map. Right-click or Esc to cancel.", F_TXT_S, Cyber.CYAN, 1);
         button(x0, Math.min(y + 10, Ui.H - 56), 130, 34, "CANCEL", () -> screen.beginPlacing(null)).setAccent(Cyber.RED);
     }
 
@@ -569,7 +564,8 @@ public final class SidePanel extends GCompound {
         TowerType ty = t.getType();
         Color tc = Cyber.lerp(Ui.c(ty.primaryRgb), Color.WHITE, 0.3);
         boolean maxed = !t.canUpgrade();
-        String badge = maxed ? "MAX" : "TIER " + t.getTier() + "/" + t.getMaxTier();
+        boolean hero = ty.isHero();
+        String badge = hero ? "HERO" : maxed ? "MAX" : "TIER " + t.getTier() + "/" + t.getMaxTier();
         header(ty.displayName, tc, badge, maxed ? Cyber.YELLOW : Cyber.CYAN);
         y += 4;
         GLabel sub = put(d.subtitle + "  //  ", x0, y + 12, F_TXT, Cyber.MUTED);
@@ -582,11 +578,12 @@ public final class SidePanel extends GCompound {
         double yy = y;
         if (!base.isSupportOnly()) {
             statCell(x0, yy, "damage", () -> Ui.fmt(t.getStats().hit.damage * t.damageMultiplier(game)), Cyber.TEXT);
-            statCell(x0 + 180, yy, "fire rate", () -> Ui.fmt(t.effectiveRate(game)) + "/s", Cyber.TEXT);
-            statCell(x0, yy + 34, "range", () -> String.valueOf((int) t.effectiveRange(game)), Cyber.TEXT);
+            statCell(x0 + 180, yy, "interval", () -> Ui.fmt(1.0 / Math.max(0.01, t.effectiveRate(game))) + "s", Cyber.TEXT);
+            statCell(x0, yy + 34, "range", () -> HeroStatText.range(t.getType(), t.effectiveRange(game)), Cyber.TEXT);
             statCell(x0 + 180, yy + 34, modeLabel(base), () -> modeText(t.getStats()), Cyber.TEXT);
             statCell(x0, yy + 68, "kills", () -> Cyber.commas(t.getKills()), Cyber.GREEN);
-            statCell(x0 + 180, yy + 68, "invested", () -> Ui.money(t.getInvestedCost()), Cyber.YELLOW);
+            if (hero) statCell(x0 + 180, yy + 68, "ability", () -> t.isAbilityReady() ? "READY" : (int) Math.ceil(t.getAbilityCooldownRemaining()) + "s", Cyber.MAGENTA);
+            else statCell(x0 + 180, yy + 68, "invested", () -> Ui.money(t.getInvestedCost()), Cyber.YELLOW);
             y += 102;
         } else {
             statCell(x0, yy, "kills", () -> Cyber.commas(t.getKills()), Cyber.GREEN);
@@ -615,9 +612,12 @@ public final class SidePanel extends GCompound {
             y += 12;
         }
 
-        // ---- upgrade path: one pip per upgrade, labels from tierLabels
-        section("upgrade path");
+        String extra = HeroStatText.liveLine(game, t);
+        if (extra != null) para(extra, F_TXT_S, Cyber.YELLOW, 2);
+
+        // ---- upgrade path: one pip per upgrade, labels from tierLabels (heroes have none)
         int n = d.upgrades.length;
+        if (n > 0) section("upgrade path");
         double gap = 6, pipW = (textW - gap * (n - 1)) / Math.max(1, n);
         for (int i = 0; i < n; i++) {
             boolean owned = i < t.getTier(), next = i == t.getTier();
@@ -642,7 +642,7 @@ public final class SidePanel extends GCompound {
             pr.setLocation(x0 + textW - 12 - pr.getWidth(), y + 27);
             y += 40;
             para(u.description, F_TXT_S, Cyber.MUTED, 3);
-        } else {
+        } else if (!hero) {
             y += 4;
             put("MAX TIER  //  " + t.getTierLabel(), x0, y + 14, Cyber.display(Font.BOLD, 16), Cyber.YELLOW);
             y += 16;
@@ -652,8 +652,8 @@ public final class SidePanel extends GCompound {
         if (!base.isSupportOnly()) {
             y += 12;
             put(Cyber.spaced("target [t]"), x0, y + 20, F_MICRO, Cyber.alpha(Cyber.CYAN, 230));
-            if (ty == TowerType.BELLARMINE_STUDENT_AI) {
-                put("AUTO  (camo and regrow first)", x0 + 86, y + 20, Cyber.body(Font.BOLD, 12), Cyber.CYAN);
+            if (ty == TowerType.OWEN) {
+                put("AUTO  (each drone picks its own)", x0 + 86, y + 20, Cyber.body(Font.BOLD, 12), Cyber.CYAN);
             } else {
                 button(x0 + 86, y, 34, 28, "<", () -> screen.cycleTargeting(-1)).setAccent(Cyber.CYAN);
                 String tl = t.getTargeting() == lindefense.tower.Targeting.DENSEST_CLUSTER ? "DENSEST CLUSTER" : t.getTargeting().label.toUpperCase();
@@ -681,7 +681,7 @@ public final class SidePanel extends GCompound {
 
         // ---- sell / deselect
         y += 12;
-        UIButton sell = button(x0, y, 210, 34, "SELL  +" + Ui.money(Shop.sellValue(t)), () -> screen.sellSelected());
+        UIButton sell = button(x0, y, 210, 34, hero ? "DISMISS (NO REDEPLOY)" : "SELL  +" + Ui.money(Shop.sellValue(t)), () -> screen.sellSelected());
         sell.setAccent(Cyber.RED);
         UIButton desel = button(x0 + 218, y, textW - 218, 34, "DESELECT", () -> screen.selectTower(null));
         desel.setAccent(Cyber.MUTED);

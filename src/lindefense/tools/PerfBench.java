@@ -115,6 +115,7 @@ public final class PerfBench {
             }
         }
         spots.sort((a, b) -> a[0] != b[0] ? Double.compare(a[0], b[0]) : a[1] != b[1] ? Double.compare(a[1], b[1]) : Double.compare(a[2], b[2]));
+        g.setHeroCollection(lindefense.sim.HeroCollection.inMemory()); for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);   // tools never touch saved unlocks
         TowerType[] all = TowerType.purchasable();
         int placed = 0, typeIdx = 0;
         for (double[] s : spots) {

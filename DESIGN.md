@@ -51,88 +51,106 @@ without touching game logic.
 
 ## 2. Towers
 
-All 20 towers have one base form and **exactly three** purchasable upgrades (four states, tier 0-3), bought in order,
-plus one ability. The displayed name is the family name and the spec's nickname is the subtitle. Tier labels are model
-names in increasing order of model intelligence (heroes use their own tier names); the upgrade mechanics and costs follow
-the spec's slot order. Source of truth for every number: `lindefense/tower/data/*.java`.
+The tower shop sells 18 towers. The 17 original towers have one base form and **exactly three** purchasable upgrades
+(tier 0-3) and are **passive** (no active abilities). **Zethos** (Primary) has **four** upgrades and the Reality Collapse
+ability. The six **heroes** are not in the tower shop: they are unlocked once in the **Hero Store** (permanent, saved between
+sessions), deploy for free once per match, have no upgrades and each has an active ability. Heroes and Zethos are specified
+in map units: 1 unit = 4 px (tables below are in px). Source of truth for every number: `lindefense/tower/data/*.java`.
 
 ### 2.1 Summary
 
-| Tower | Faction | Nickname | Tiers (base -> U3) | Base | U1 | U2 | U3 | Total | Sell (max) | Ability (cooldown) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Bellarmine Student | Heroes | Melee-Ranged Hybrid | Backpack Toss -> Textbook Smash -> Calculator Shield -> All-Nighter Aura | $550 | $350 | $600 | $1100 | $2600 | $1819 | Caffeine Rush (45s) |
-| Bellarmine Student + AI | Heroes | Autonomous Hybrid | Copilot Assist -> Automated Essay -> Neural Backpack -> Autonomous Scholar | $800 | $500 | $850 | $1500 | $3650 | $2555 | Prompt Overclock (60s) |
-| Brad Lindemann | Heroes | Commander Support & Heavy Artillery | Megaphone Shouted Orders -> Discipline Field -> Tactical Megaphone -> Supreme Commander Strike | $2000 | $1500 | $3000 | $6000 | $12500 | $8750 | Inspiration Wave (90s) |
-| Gemini | Primary | Prism Blaster | Gemini 3.7 Flash -> Gemini 3.8 Flash -> Gemini 3.1 Pro -> Gemini 4 Argon | $400 | $650 | $700 | $1200 | $2950 | $2065 | Argon Singularity (50s) |
-| Claude | Primary | Ink Weaver | Claude Haiku 5.5 -> Claude Sonnet 5.5 -> Claude Opus 5.5 -> Claude Fable 5.1 | $450 | $550 | $650 | $1100 | $2750 | $1924 | Opus Time-Lock (45s) |
-| GPT | Primary | Cosmic Strategist | GPT-5.6 Terra -> GPT-6 Luna -> GPT-6 Astra -> GPT-6.1 Sol | $500 | $750 | $800 | $1300 | $3350 | $2345 | Astra Beam (60s) |
-| DeepSeek | Military | Railgun Engineer | DeepSeek V4 Flash -> DeepSeek V4.1 Flash -> DeepSeek R1 -> DeepSeek V4 Pro | $600 | $850 | $900 | $1500 | $3850 | $2695 | R1 Deep Reasoning Strike (40s) |
-| Copilot | Military | Autonomous Engineer | Copilot -> Copilot Pro -> Microsoft 365 Copilot -> GitHub Copilot Enterprise | $350 | $350 | $600 | $1000 | $2300 | $1610 | Enterprise Auto-Refactor (60s) |
-| DALL·E | Magic | Sketch Summoner | DALL·E 2 -> DALL·E 3 -> DALL·E 3 HD -> DALL·E 3 API | $550 | $500 | $850 | $1400 | $3300 | $2310 | Outpainting Expansion (50s) |
-| Sora | Magic | Time Director | Sora -> Sora Turbo -> Sora 2 -> Sora 2 Pro | $700 | $650 | $1000 | $1800 | $4150 | $2905 | Cinematic Rewind (75s) |
-| Suno | Magic | Sonic Composer | Suno v5 -> Suno v6-Mini -> Suno v6 -> Suno v6-Wild | $500 | $500 | $800 | $1350 | $3150 | $2205 | Symphonic Bass Drop (60s) |
-| Grok | Support | Chaos Generator | Grok 4.5 -> Grok 4.6 -> Grok 4.20 Reasoning -> Grok 4.7 | $650 | $600 | $950 | $1600 | $3800 | $2660 | Real-Time Override (60s) |
-| Perplexity | Support | Intelligence Scanner | Sonar -> Sonar Pro -> Sonar Reasoning Pro -> Sonar Deep Research | $450 | $450 | $750 | $1250 | $2900 | $2029 | Deep Research Scrape (90s) |
-| Qwen | Titans | Modular Drone Factory | Qwen3.8 Flash -> Qwen3.6 Max -> Qwen3.7 Plus -> Qwen3.8 Max | $750 | $1100 | $1200 | $2000 | $5050 | $3535 | Cosmic Sovereign Burst (90s) |
-| Llama | Titans | Primal Swarm | Llama 4 Scout -> Llama 4 Maverick -> Muse Glimmer -> Muse Wonder | $700 | $1000 | $1100 | $1900 | $4700 | $3290 | Open Titan Stampede (90s) |
-| Mistral | Titans | Windblade Turbine | Ministral 3 8B -> Ministral 3 14B -> Mistral Small 4 -> Mistral Large 4 | $650 | $650 | $1050 | $1750 | $4100 | $2870 | Stratosphere Tempest (75s) |
-| Cohere | Titans | Command Commander | Command R7B -> Command R+ -> Command A -> Command A+ | $800 | $800 | $1300 | $2200 | $5100 | $3570 | Command Override (80s) |
-| GLM | Titans | Gravity Manipulator | GLM 5.1 -> GLM 5.2 -> GLM 5.3 Flash -> GLM 5.3 | $600 | $550 | $900 | $1500 | $3550 | $2485 | Matrix Overload (90s) |
-| Kimi | Titans | Dimensional Assassin | Kimi K2.5 -> Kimi K2.6 -> Kimi K3 -> Kimi K3.1 Pro | $700 | $700 | $1150 | $1950 | $4500 | $3150 | Infinite Context Burst (100s) |
-| MiniMax | Titans | Clone Generator | MiniMax M2.5 -> MiniMax M2.7 -> MiniMax M3 -> MiniMax M3.1 Flash | $650 | $1050 | $1050 | $1800 | $4550 | $3185 | Scale Factor Overclock (60s) |
+| Tower | Faction | Nickname | Tiers (base -> max) | Price | Upgrades | Total | Sell (max) | Ability (cooldown) |
+|---|---|---|---|---|---|---|---|---|
+| Brad Lindemann | Heroes | Legendary Area-Damage Commander | Battlefield Commander | Hero Store $1800 (deploy free) | none | - | no refund | Supreme Command (45s) |
+| Brandon | Heroes | Rapid-Fire Single-Target Specialist | Precision Gunner | Hero Store $1100 (deploy free) | none | - | no refund | Overdrive (35s) |
+| Rohan | Heroes | Defensive Crowd-Control Specialist | Cryo Warden | Hero Store $1300 (deploy free) | none | - | no refund | Absolute Zero (50s) |
+| Ronil | Heroes | Explosive Artillery Specialist | Meteor Caller | Hero Store $1500 (deploy free) | none | - | no refund | Meteor Shower (55s) |
+| Shashank | Heroes | Economic Support and Tactical Debuffer | Data Strategist | Hero Store $1000 (deploy free) | none | - | no refund | Resource Optimization (60s) |
+| Owen | Heroes | Summoner and Multi-Target Specialist | Drone Operator | Hero Store $1400 (deploy free) | none | - | no refund | Drone Swarm (50s) |
+| Gemini | Primary | Prism Blaster | Gemini 3.7 Flash -> Gemini 3.8 Flash -> Gemini 3.1 Pro -> Gemini 4 Argon | $400 | $650 / $700 / $1200 | $2950 | $2065 | none (passive) |
+| Claude | Primary | Ink Weaver | Claude Haiku 5.5 -> Claude Sonnet 5.5 -> Claude Opus 5.5 -> Claude Fable 5.1 | $450 | $550 / $650 / $1100 | $2750 | $1924 | none (passive) |
+| GPT | Primary | Cosmic Strategist | GPT-5.6 Terra -> GPT-6 Luna -> GPT-6 Astra -> GPT-6.1 Sol | $500 | $750 / $800 / $1300 | $3350 | $2345 | none (passive) |
+| Zethos | Primary | The Quantum Architect | Quantum Pulse -> Quantum Acceleration -> Dimensional Fracture -> Quantum Singularity -> Zethos: Reality Engine | $650 | $350 / $650 / $1200 / $2500 | $5350 | $3744 | Reality Collapse (55s) |
+| DeepSeek | Military | Railgun Engineer | DeepSeek V4 Flash -> DeepSeek V4.1 Flash -> DeepSeek R1 -> DeepSeek V4 Pro | $600 | $850 / $900 / $1500 | $3850 | $2695 | none (passive) |
+| Copilot | Military | Autonomous Engineer | Copilot -> Copilot Pro -> Microsoft 365 Copilot -> GitHub Copilot Enterprise | $350 | $350 / $600 / $1000 | $2300 | $1610 | none (passive) |
+| DALL·E | Magic | Sketch Summoner | DALL·E 2 -> DALL·E 3 -> DALL·E 3 HD -> DALL·E 3 API | $550 | $500 / $850 / $1400 | $3300 | $2310 | none (passive) |
+| Sora | Magic | Time Director | Sora -> Sora Turbo -> Sora 2 -> Sora 2 Pro | $700 | $650 / $1000 / $1800 | $4150 | $2905 | none (passive) |
+| Suno | Magic | Sonic Composer | Suno v5 -> Suno v6-Mini -> Suno v6 -> Suno v6-Wild | $500 | $500 / $800 / $1350 | $3150 | $2205 | none (passive) |
+| Grok | Support | Chaos Generator | Grok 4.5 -> Grok 4.6 -> Grok 4.20 Reasoning -> Grok 4.7 | $650 | $600 / $950 / $1600 | $3800 | $2660 | none (passive) |
+| Perplexity | Support | Intelligence Scanner | Sonar -> Sonar Pro -> Sonar Reasoning Pro -> Sonar Deep Research | $450 | $450 / $750 / $1250 | $2900 | $2029 | none (passive) |
+| Qwen | Titans | Modular Drone Factory | Qwen3.8 Flash -> Qwen3.6 Max -> Qwen3.7 Plus -> Qwen3.8 Max | $750 | $1100 / $1200 / $2000 | $5050 | $3535 | none (passive) |
+| Llama | Titans | Primal Swarm | Llama 4 Scout -> Llama 4 Maverick -> Muse Glimmer -> Muse Wonder | $700 | $1000 / $1100 / $1900 | $4700 | $3290 | none (passive) |
+| Mistral | Titans | Windblade Turbine | Ministral 3 8B -> Ministral 3 14B -> Mistral Small 4 -> Mistral Large 4 | $650 | $650 / $1050 / $1750 | $4100 | $2870 | none (passive) |
+| Cohere | Titans | Command Commander | Command R7B -> Command R+ -> Command A -> Command A+ | $800 | $800 / $1300 / $2200 | $5100 | $3570 | none (passive) |
+| GLM | Titans | Gravity Manipulator | GLM 5.1 -> GLM 5.2 -> GLM 5.3 Flash -> GLM 5.3 | $600 | $550 / $900 / $1500 | $3550 | $2485 | none (passive) |
+| Kimi | Titans | Dimensional Assassin | Kimi K2.5 -> Kimi K2.6 -> Kimi K3 -> Kimi K3.1 Pro | $700 | $700 / $1150 / $1950 | $4500 | $3150 | none (passive) |
+| MiniMax | Titans | Clone Generator | MiniMax M2.5 -> MiniMax M2.7 -> MiniMax M3 -> MiniMax M3.1 Flash | $650 | $1050 / $1050 / $1800 | $4550 | $3185 | none (passive) |
 
-Damage types per tower: Student = Blunt, Student + AI / Gemini / GPT / DeepSeek / Copilot / Qwen / MiniMax = Energy, Brad / Grok / Cohere = Explosive,
-Claude = Sharp, Llama / Mistral = Kinetic, DALL-E / Sora / Perplexity / Kimi = Magic, Suno = Sonic, GLM = Gravity. Unspecified projectile speeds default to 450 px/s.
+Damage types per tower: Gemini / GPT / Zethos / DeepSeek / Copilot / Qwen / MiniMax / Brandon / Rohan / Shashank / Owen = Energy,
+Brad / Ronil / Grok / Cohere = Explosive, Claude = Sharp, Llama / Mistral = Kinetic, DALL-E / Sora / Perplexity / Kimi = Magic, Suno = Sonic,
+GLM = Gravity. Unspecified projectile speeds of the original towers default to 450 px/s.
 
 ### 2.2 Per-tower detail
 
-#### Bellarmine Student - Melee-Ranged Hybrid (Heroes, $550)
+#### Brad Lindemann - Legendary Area-Damage Commander (Heroes, Hero Store $1800)
 
-Hero. Throws pencils and small books; later heavy textbooks with splash, and an aura that boosts nearby towers. Blunt damage, no camo detection.
-
-| Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
-|---|---|---|---|---|---|---|---|---|
-| 0 | Backpack Toss (base) | $550 | 1 | Blunt | 0.9s | 160 | 2 | projectile 500 px/s |
-| 1 | Textbook Smash | $350 | 2 | Blunt | 0.9s | 160 | 8 | projectile 500 px/s, splash 40 |
-| 2 | Calculator Shield | $600 | 2 | Blunt | 0.9s | 160 | 10 | projectile 500 px/s, splash 40; aura 140: +1 pierce |
-| 3 | All-Nighter Aura | $1100 | 2 | Blunt | 0.6s | 160 | 10 | projectile 500 px/s, splash 40; aura 140: +15% speed, +1 damage, +1 pierce |
-
-- **U1 Textbook Smash** ($350): Textbook Smash: Heavy textbooks: splash radius 40, damage 2, pierce 8.
-- **U2 Calculator Shield** ($600): Calculator Shield: Aura radius 140 gives nearby towers +1 pierce; own pierce +2.
-- **U3 All-Nighter Aura** ($1100): All-Nighter Aura: Aura also gives +15% attack speed and +1 damage; own interval 0.6.
-- **Ability: Caffeine Rush** (cooldown 45 s): Doubles own attack speed and projectile speed for 10 s.
-
-#### Bellarmine Student + AI - Autonomous Hybrid (Heroes, $800)
-
-Hero. Homing laser-etched notes that prioritise Camo and Regrow enemies and ignore line-of-sight blockers. Built-in camo detection.
+Hero. Massive explosions and chaining energy: a command-energy shell at the strongest enemy explodes for full damage in 18 units, then lightning chains through up to 5 more enemies. Slow attack interval. No camo detection.
 
 | Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
 |---|---|---|---|---|---|---|---|---|
-| 0 | Copilot Assist (base) | $800 | 1 | Energy | 0.7s | 200 | 2 | projectile 600 px/s; ignores line of sight; camo detection |
-| 1 | Automated Essay | $500 | 1 | Energy | 0.7s | 200 | 2 | projectile 600 px/s; ignores line of sight; 3 targets; camo detection |
-| 2 | Neural Backpack | $850 | 1 | Energy | 0.7s | 200 | 5 | projectile 600 px/s; ignores line of sight; 3 targets; armor crack 3s; camo detection |
-| 3 | Autonomous Scholar | $1500 | 1 | Energy | 0.7s | 200 | 5 | projectile 600 px/s; ignores line of sight; 3 targets; armor crack 3s; camo detection |
+| 0 | Battlefield Commander (base) | $0 | 35 | Explosive | 2s | 220 | 1 | projectile 180 px/s, splash 72 |
 
-- **U1 Automated Essay** ($500): Automated Essay: Each attack fires 3 homing notes at 3 different targets.
-- **U2 Neural Backpack** ($850): Neural Backpack: Pierce +3; hits apply ARMOR CRACK for 3 s.
-- **U3 Autonomous Scholar** ($1500): Autonomous Scholar: Orbiting AI companion attacks on its own (range 220, interval 0.4, damage 2, pierce 3, camo); its hits MARK enemies +25% damage taken for 4 s.
-- **Ability: Prompt Overclock** (cooldown 60 s): Spawns 2 study-buddy drones for 15 s (interval 0.2, damage 3, x3 vs Lead-type and Ceramic-type).
+- **Ability: Supreme Command** (cooldown 45 s): For 12 s: double primary damage, splash radius 18 -> 27 units, up to 10 chain targets at 35 damage each.
 
-#### Brad Lindemann - Commander Support & Heavy Artillery (Heroes, $2000)
+#### Brandon - Rapid-Fire Single-Target Specialist (Heroes, Hero Store $1100)
 
-Hero. The strongest and most expensive unit in the game: a megaphone aura boosts nearby towers while shockwave shells pound the track. No camo detection.
+Hero. Extremely fast precision bolts that fly in a straight line through up to 3 enemies. Great against fast enemies and medium groups; low damage per bolt. No camo detection.
 
 | Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
 |---|---|---|---|---|---|---|---|---|
-| 0 | Megaphone Shouted Orders (base) | $2000 | 3 | Explosive | 1.4s | 260 | 15 | projectile 450 px/s, splash 60; +2 vs MOAB-class; aura 180: +10% speed |
-| 1 | Discipline Field | $1500 | 3 | Explosive | 1.4s | 260 | 15 | projectile 450 px/s, splash 60; +2 vs MOAB-class; aura 180: +10% speed; field slow 30%; field mark +1 |
-| 2 | Tactical Megaphone | $3000 | 3 | Explosive | 1.4s | 260 | 15 | projectile 450 px/s, splash 60; +2 vs MOAB-class; aura 180: +25% speed, +2 pierce; field slow 30%; field mark +1 |
-| 3 | Supreme Commander Strike | $6000 | 3 | Explosive | 1.4s | 260 | 15 | projectile 450 px/s, splash 60; +2 vs MOAB-class; aura 180: +35% speed, +1 damage, +2 pierce; field slow 30%; field mark +1 |
+| 0 | Precision Gunner (base) | $0 | 12 | Energy | 0.3s | 168 | 3 | projectile 260 px/s |
 
-- **U1 Discipline Field** ($1500): Discipline Field: Non-boss enemies in range are SLOWED 30% and MARKED (+1 damage taken).
-- **U2 Tactical Megaphone** ($3000): Tactical Megaphone: Aura becomes +25% attack speed and +2 pierce.
-- **U3 Supreme Commander Strike** ($6000): Supreme Commander Strike: Every 6 s a 5-shell barrage hits anywhere on the track, aimed at the boss if present, otherwise the densest cluster (damage 25 each, splash 90, x3 vs MOAB-class). Aura becomes +35% attack speed and +1 damage.
-- **Ability: Inspiration Wave** (cooldown 90 s): Resets ability cooldowns of all towers in range (not Brad's own) and gives them +50% pierce for 10 s.
+- **Ability: Overdrive** (cooldown 35 s): For 10 s: fires twice as fast (interval halved), +50% damage, pierce 5.
+
+#### Rohan - Defensive Crowd-Control Specialist (Heroes, Hero Store $1300)
+
+Hero. Icy blasts damage everything within 12 units, slow by 40% for 3 s and may freeze each enemy for 1 s (20%). Bosses cannot be frozen and take a 15% slow instead. Low direct damage. No camo detection.
+
+| Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Cryo Warden (base) | $0 | 18 | Energy | 1.5s | 160 | 1 | projectile 200 px/s, splash 48 |
+
+- **Ability: Absolute Zero** (cooldown 50 s): Deals 50 damage to every enemy on the map and freezes all non-boss enemies for 4 s. Bosses are slowed 50% for 4 s instead.
+
+#### Ronil - Explosive Artillery Specialist (Heroes, Hero Store $1500)
+
+Hero. Long-range meteor strikes deal full damage to every enemy within 16 units. Slow firing speed; excels against armoured groups and large enemies. No camo detection.
+
+| Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Meteor Caller (base) | $0 | 75 | Explosive | 3s | 300 | 1 | projectile 140 px/s, splash 64 |
+
+- **Ability: Meteor Shower** (cooldown 55 s): Calls 8 meteors over 6 s, each at a different spot with enemies anywhere on the map: 100 damage within 14 units.
+
+#### Shashank - Economic Support and Tactical Debuffer (Heroes, Hero Store $1000)
+
+Hero. Data-draining shots hit up to 2 enemies and make them take +10% damage from every tower and hero for 4 s (refreshes, never stacks). Low direct damage. No camo detection.
+
+| Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Data Strategist (base) | $0 | 15 | Energy | 1.2s | 192 | 2 | projectile 220 px/s; mark +10% 4s |
+
+- **Ability: Resource Optimization** (cooldown 60 s): Immediately generates $500 and gives every tower and hero within 35 units +20% attack speed for 12 s (does not stack).
+
+#### Owen - Summoner and Multi-Target Specialist (Heroes, Hero Store $1400)
+
+Hero. Deploys 3 autonomous drones that each pick, shoot and switch targets on their own (20 damage every 1.5 s). Relies on drone uptime. No camo detection.
+
+| Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Drone Operator (base) | $0 | 20 | Energy | 1.5s | 200 | 1 | custom attack |
+
+- **Ability: Drone Swarm** (cooldown 50 s): Summons 5 extra drones for 15 s, each dealing 25 damage once per second. The original 3 drones stay.
 
 #### Gemini - Prism Blaster (Primary, $400)
 
@@ -148,7 +166,7 @@ Instant-hit laser bolts that ricochet and later chain through a crowd. Gains cam
 - **U1 Gemini 3.8 Flash** ($650): Interval 0.5, pierce 3, beams ricochet to up to 3 more enemies within 80 px.
 - **U2 Gemini 3.1 Pro** ($700): Spectrum Analysis: Gains camo detection. Hits permanently remove Camo and Regrow from non-boss enemies.
 - **U3 Gemini 4 Argon** ($1200): Prismatic Beam: Chains to up to 8 enemies; damage 2; x3 vs MOAB-class.
-- **Ability: Argon Singularity** (cooldown 50 s): Pulls all non-boss enemies within 150 px into a vortex for 2 s (they stop moving), then deals 10 damage to each. Bosses take 30.
+- No active ability (passive tower).
 
 #### Claude - Ink Weaver (Primary, $450)
 
@@ -164,7 +182,7 @@ Needle prose spikes. Sharp damage cannot hurt Lead-type enemies until the final 
 - **U1 Claude Sonnet 5.5** ($550): Pierce 8, interval 0.55.
 - **U2 Claude Opus 5.5** ($650): Context Snare: Hit enemies are MARKED (+1 damage taken) and SLOWED 15% for 4 s.
 - **U3 Claude Fable 5.1** ($1100): Pierce 20, damage 2, +3 damage vs Fortified / Lead-type / Ceramic-type, and can damage Lead.
-- **Ability: Opus Time-Lock** (cooldown 45 s): FREEZES all non-boss enemies in range for 4 s (bosses SLOWED 50%). Frozen enemies take x2 damage.
+- No active ability (passive tower).
 
 #### GPT - Cosmic Strategist (Primary, $500)
 
@@ -180,7 +198,25 @@ Plasma orbs that gain splash, two orbiting moons, burning hits and an adaptive f
 - **U1 GPT-6 Luna** ($750): Splash radius 40; two orbiting moons (radius 60) deal 1 damage every 0.5 s on contact.
 - **U2 GPT-6 Astra** ($800): Solar Flare: Hits BURN for 1 damage/s over 3 s.
 - **U3 GPT-6.1 Sol** ($1300): Adaptive Plasma: Each shot checks its target: x2 vs MOAB-class, +2 vs Fortified, +2 vs Ceramic-type, SONIC-like knockback vs Lead-type.
-- **Ability: Astra Beam** (cooldown 60 s): 5 s continuous beam on the strongest enemy, 30 damage/s, x2 vs MOAB-class, ignores Fortified.
+- No active ability (passive tower).
+
+#### Zethos - The Quantum Architect (Primary, $650)
+
+Precision quantum-energy projectiles that pierce the first enemies on the track, fracture into splash at Tier 2 and bounce between enemies from Tier 3. One projectile never damages the same enemy twice. Expensive upgrade path. No camo detection.
+
+| Tier | Name | Cost | Damage | Type | Interval | Range | Pierce | Behaviour |
+|---|---|---|---|---|---|---|---|---|
+| 0 | Quantum Pulse (base) | $650 | 10 | Energy | 1s | 160 | 2 | projectile 220 px/s |
+| 1 | Quantum Acceleration | $350 | 15 | Energy | 0.85s | 180 | 3 | projectile 260 px/s |
+| 2 | Dimensional Fracture | $650 | 22 | Energy | 0.75s | 200 | 4 | projectile 260 px/s, splash 20 |
+| 3 | Quantum Singularity | $1200 | 32 | Energy | 0.65s | 220 | 5 | projectile 260 px/s, splash 32; 3 bounces/100 |
+| 4 | Zethos: Reality Engine | $2500 | 55 | Energy | 0.5s | 260 | 8 | projectile 260 px/s, splash 48; 5 bounces/100 |
+
+- **U1 Quantum Acceleration** ($350): Damage 15, interval 0.85 s, range 45 units, pierce 3. Faster projectiles (65 units/s) with a brighter energy trail.
+- **U2 Dimensional Fracture** ($650): Damage 22, interval 0.75 s, range 50 units, pierce 4. Each impact fractures into quantum fragments: 50% splash damage within 5 units.
+- **U3 Quantum Singularity** ($1200): Damage 32, interval 0.65 s, range 55 units, pierce 5. Singularity explosions: 75% splash within 8 units. Then bounces to up to 3 more enemies at 75% damage.
+- **U4 Zethos: Reality Engine** ($2500): Damage 55, interval 0.5 s, range 65 units, pierce 8. Every impact explodes for 55 within 12 units; bounces to up to 5 more enemies at full damage.
+- **Ability: Reality Collapse** (cooldown 55 s): For 6 s: double damage, double attack speed, +15 units range, projectiles bounce to up to 8 extra enemies and every impact explodes.
 
 #### DeepSeek - Railgun Engineer (Military, $600)
 
@@ -196,7 +232,7 @@ Map-wide instant-hit sniper that ignores line-of-sight blockers. Volleys, a recu
 - **U1 DeepSeek V4.1 Flash** ($850): Parallel Processing: 3 shots per volley, pierce 3.
 - **U2 DeepSeek R1** ($900): Recursive Lock: Default targeting becomes Strongest. Each consecutive hit on the same target adds +1 damage (max +6); the bonus resets when the target changes.
 - **U3 DeepSeek V4 Pro** ($1500): Advanced Computation: Damage 6; x3 vs all Sorting Algorithm enemies and Linked Lists; x2 vs bosses.
-- **Ability: R1 Deep Reasoning Strike** (cooldown 40 s): Instantly destroys the strongest non-boss enemy. It spawns no children; the parent's cash is paid once.
+- No active ability (passive tower).
 
 #### Copilot - Autonomous Engineer (Military, $350)
 
@@ -212,7 +248,7 @@ Code fragments with a tether that speeds up nearby towers. Later launches explos
 - **U1 Copilot Pro** ($350): Hotfix: Tether bonus becomes +20% attack speed and +1 pierce.
 - **U2 Microsoft 365 Copilot** ($600): Task Scheduler: Every 8 s launches an explosive drone at the densest cluster (damage 6, splash 70).
 - **U3 GitHub Copilot Enterprise** ($1000): Enterprise Network: All MILITARY towers anywhere on the map get +15% attack speed and +1 damage; the local tether becomes +30% speed and +2 pierce.
-- **Ability: Enterprise Auto-Refactor** (cooldown 60 s): All MILITARY towers attack x2 faster for 12 s.
+- No active ability (passive tower).
 
 #### DALL·E - Sketch Summoner (Magic, $550)
 
@@ -228,7 +264,7 @@ Sketch arrows, plus paint zones on the track that damage enemies; later illustra
 - **U1 DALL·E 3** ($500): Living Illustration: Every 5 s, 2 illustrated creatures walk backward along the track (contact damage 2, pierce 5 each).
 - **U2 DALL·E 3 HD** ($850): Masterpiece Explosion: Paint zones grow to radius 70 and apply ARMOR CRACK to non-boss enemies inside, downgrading armored enemies into weaker forms.
 - **U3 DALL·E 3 API** ($1400): Infinite Canvas: Zones every 3 s, 4 creatures per wave, arrow pierce 6.
-- **Ability: Outpainting Expansion** (cooldown 50 s, player-chosen location): Paints a 10 s "extra track" zone on the selected track segment; enemies inside move at 25% speed.
+- No active ability (passive tower).
 
 #### Sora - Time Director (Magic, $700)
 
@@ -244,7 +280,7 @@ Film-frame projectiles and a slowing field around the tower; later rewinds enemi
 - **U1 Sora Turbo** ($650): Fast Forward: Projectile speed x2, interval 0.7, slow becomes 55%.
 - **U2 Sora 2** ($1000): Scene Rewind: Every 8 s, KNOCKBACK 120 px on all non-boss enemies in range.
 - **U3 Sora 2 Pro** ($1800): Time Loop: Places 2 loop zones (radius 60) on the track in range; enemies inside take 2 damage every 0.4 s and are SLOWED 60%.
-- **Ability: Cinematic Rewind** (cooldown 75 s): Every non-boss enemy on screen moves back along the track by 3 s of its own travel distance; bosses by 1 s.
+- No active ability (passive tower).
 
 #### Suno - Sonic Composer (Magic, $500)
 
@@ -260,7 +296,7 @@ Rhythmic sound projectiles (x2 vs Ceramic, knock Lead-type back); later bass-dro
 - **U1 Suno v6-Mini** ($500): Bass Drop: Every 3 s, a shockwave deals 2 damage to all enemies within 140 px.
 - **U2 Suno v6** ($800): Chord Strike: Every 4th attack is a chord (damage 6, pierce 10).
 - **U3 Suno v6-Wild** ($1350): Uncontrolled Symphony: Interval 0.4; every 1 s, 2 random sonic explosions (radius 50, damage 3) on enemies in range.
-- **Ability: Symphonic Bass Drop** (cooldown 60 s): Every enemy on screen takes damage = 4 x its speed multiplier (bosses capped at 200).
+- No active ability (passive tower).
 
 #### Grok - Chaos Generator (Support, $650)
 
@@ -276,7 +312,7 @@ Thermal micro-missiles with splash that can hit Lead-type enemies; later burns, 
 - **U1 Grok 4.6** ($600): Ratio: Hits BURN for 1 damage/s over 4 s, and the burn spreads once to enemies within 40 px.
 - **U2 Grok 4.20 Reasoning** ($950): Paradox Trap: Unlocks Densest Cluster targeting; every 5 s fires a 6-missile volley (damage 3 each) at the densest cluster.
 - **U3 Grok 4.7** ($1600): Chaos Mode: Interval 0.6; missiles cycle between incendiary (burn), cluster (splits into 4) and heavy (x3 vs MOAB-class).
-- **Ability: Real-Time Override** (cooldown 60 s): Towers within 200 px deal +100% damage to MOAB-class enemies for 10 s.
+- No active ability (passive tower).
 
 #### Perplexity - Intelligence Scanner (Support, $450)
 
@@ -292,7 +328,7 @@ Sonar that grants nearby towers camo detection and pings Camo enemies; later rev
 - **U1 Sonar Pro** ($450): Target Identification: All Camo enemies on the map can be targeted by every tower while this tower exists.
 - **U2 Sonar Reasoning Pro** ($750): Predictive Analysis: Enemies in range are MARKED (+20% damage taken); towers in range get +15% range. Towers within this radius are immune to Predictive Surveillance.
 - **U3 Sonar Deep Research** ($1250): End-of-round bonus becomes +$250.
-- **Ability: Deep Research Scrape** (cooldown 90 s): Instantly gain cash equal to 20% of the current round's pop value so far (max $3,000).
+- No active ability (passive tower).
 
 #### Qwen - Modular Drone Factory (Titans, $750)
 
@@ -308,7 +344,7 @@ Multi-threaded energy discs; later patrolling drones and a screen-wide burst tha
 - **U1 Qwen3.6 Max** ($1100): Pierce 8, 3 discs per attack.
 - **U2 Qwen3.7 Plus** ($1200): Drone Formation: 2 drones patrol other track segments anywhere on the map (interval 1.2, same disc stats).
 - **U3 Qwen3.8 Max** ($2000): Sovereign Processing: Damage 4; x3 vs enemies with max HP of 5 or more and vs Fortified MOAB-class.
-- **Ability: Cosmic Sovereign Burst** (cooldown 90 s): Screen-wide wave deals 20 damage to all enemies and removes Fortified from all airships except Palantir (Palantir loses its current phase shield for 10 s).
+- No active ability (passive tower).
 
 #### Llama - Primal Swarm (Titans, $700)
 
@@ -324,7 +360,7 @@ Every 2 s llamas charge along a track segment in range; later spectral packs tha
 - **U1 Llama 4 Maverick** ($1000): Pack Mentality: 3 charging creatures per cycle.
 - **U2 Muse Glimmer** ($1100): Illusion Pack: Spectral creatures gain camo detection, pierce 12.
 - **U3 Muse Wonder** ($1900): Mythical Stampede: Every 4 s, a kinetic shockwave across the full range (damage 8, KNOCKBACK 40 px, x2 vs MOAB-class).
-- **Ability: Open Titan Stampede** (cooldown 90 s): A herd runs from exit to entrance along the whole track, dealing 15 damage to every enemy it touches. Bosses take 60 and are knocked back 50 px.
+- No active ability (passive tower).
 
 #### Mistral - Windblade Turbine (Titans, $650)
 
@@ -340,7 +376,7 @@ Spinning wind blades that knock fast enemies back; later gusts, a tornado and a 
 - **U1 Ministral 3 14B** ($650): Gust: Every 3 s, knocks back fast enemies 60 px and other non-boss enemies 25 px.
 - **U2 Mistral Small 4** ($1050): Cyclone: Every 8 s, a tornado sits on the track for 5 s, dealing 1 damage every 0.3 s.
 - **U3 Mistral Large 4** ($1750): Hurricane: A permanent vortex (radius 70) at the nearest track bend in range: 2 damage every 0.3 s, SLOW 30%, x2 vs MOAB-class.
-- **Ability: Stratosphere Tempest** (cooldown 75 s, player-chosen location): For 15 s, a super-hurricane on a player-chosen bend deals 10 damage every 0.3 s to airships and pushes MOAB-class enemies back 100 px.
+- No active ability (passive tower).
 
 #### Cohere - Command Commander (Titans, $800)
 
@@ -356,7 +392,7 @@ Heavy artillery shells; later fragmentation, armour cracking, a supreme-command 
 - **U1 Command R+** ($800): Fragmentation: Impact releases 8 shrapnel (damage 1, pierce 2 each).
 - **U2 Command A** ($1300): Formation Breaker: Hits apply ARMOR CRACK and +50% damage taken for 5 s.
 - **U3 Command A+** ($2200): Supreme Command: Damage 10, splash 90, interval 1.1, x3 vs MOAB-class.
-- **Ability: Command Override** (cooldown 80 s): The 3 nearest non-boss enemies (Bellarmine College Prep MOAB allowed; BFB, ZOMG, DDT and BAD excluded) reverse direction for 8 s and deal 10 damage/s to enemies they touch, then resume normally.
+- No active ability (passive tower).
 
 #### GLM - Gravity Manipulator (Titans, $600)
 
@@ -372,7 +408,7 @@ Grid projectiles that slow; later laser-linked nodes on the track, a slowing mat
 - **U1 GLM 5.2** ($550): Gravity Well: Places 2 nodes on the track in range, linked by a laser line; enemies crossing it take 2 damage (each enemy at most every 0.3 s).
 - **U2 GLM 5.3 Flash** ($900): Matrix Web: 4 nodes forming a grid; enemies inside are SLOWED 30%.
 - **U3 GLM 5.3** ($1500): Grid Saturation: 6 nodes, line damage 5, x2 vs Fortified.
-- **Ability: Matrix Overload** (cooldown 90 s): STUNS all non-boss enemies on the track for 5 s; bosses for 1.5 s.
+- No active ability (passive tower).
 
 #### Kimi - Dimensional Assassin (Titans, $700)
 
@@ -388,7 +424,7 @@ Crystalline shards that hit harder on the same target and remember every pop; la
 - **U1 Kimi K2.6** ($700): Memory Storage: +1 permanent damage per 100 enemies this tower has popped this game (max +5). The memory counter is shown in the info panel.
 - **U2 Kimi K3** ($1150): Context Chain: Consecutive-hit max becomes +8, and +1 pierce per stack.
 - **U3 Kimi K3.1 Pro** ($1950): Infinite Context: Memory cap becomes +12; every 10th attack fires a crystal burst (damage 15, splash 70).
-- **Ability: Infinite Context Burst** (cooldown 100 s): Every non-Fortified enemy on screen takes damage = memory stacks x 5. Bosses take half; Fortified enemies are immune.
+- No active ability (passive tower).
 
 #### MiniMax - Clone Generator (Titans, $650)
 
@@ -404,7 +440,7 @@ Data packets that bounce between enemies, gaining speed each bounce; later clone
 - **U1 MiniMax M2.7** ($1050): A clone copies the base attack; bounces become 6.
 - **U2 MiniMax M3** ($1050): Mass Replication: Each packet splits into 2 on its first hit.
 - **U3 MiniMax M3.1 Flash** ($1800): Infinite Multiplication: 3 clones; every 6 s, a synchronized barrage of 20 packets.
-- **Ability: Scale Factor Overclock** (cooldown 60 s): Bounce count and fire rate x3 for 10 s.
+- No active ability (passive tower).
 
 ## 3. Enemies
 

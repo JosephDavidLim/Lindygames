@@ -322,6 +322,7 @@ public final class RenderSoak {
     }
 
     static void placeAll(Game g) {
+        g.setHeroCollection(lindefense.sim.HeroCollection.inMemory()); for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);   // tools never touch saved unlocks
         GameMap map = g.getMap();
         List<Vec> spots = new ArrayList<>();
         for (int x = 30; x < GameMap.WIDTH; x += 13) for (int y = 30; y < GameMap.HEIGHT; y += 13) spots.add(new Vec(x, y));
@@ -393,7 +394,7 @@ public final class RenderSoak {
                 break;
             case 2: if (!towers.isEmpty()) { gs.selectTower(towers.get(RNG.nextInt(towers.size()))); gs.cycleTargeting(RNG.nextBoolean() ? 1 : -1); } break;
             case 4: gs.toggleShopAll(); break;
-            case 6: gs.getSidePanel().setTab(Faction.values()[RNG.nextInt(Faction.values().length)]); break;
+            case 6: gs.getSidePanel().setTab(lindefense.ui.ShopLayout.shopFactions().get(RNG.nextInt(lindefense.ui.ShopLayout.shopFactions().size()))); break;
             case 8: {
                 TowerType[] p = TowerType.purchasable();
                 gs.beginPlacing(p[RNG.nextInt(p.length)]);

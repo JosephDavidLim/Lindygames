@@ -122,12 +122,14 @@ public final class MenuScreen extends GCompound {
 
         // ---- buttons
         Font bf = menuFont(Font.BOLD, 24);
-        NeonButton play = new NeonButton(Ui.W / 2.0 - 150, 500, 300, 56, "PLAY", bf, CYAN, app::showMapSelect);
-        NeonButton how = new NeonButton(Ui.W / 2.0 - 150, 576, 300, 56, "HOW TO PLAY", bf, MAGENTA, this::toggleHelp);
-        NeonButton quit = new NeonButton(Ui.W / 2.0 - 150, 652, 300, 56, "QUIT", bf, YELLOW, app::quit);
-        for (NeonButton b : new NeonButton[] { play, how, quit }) { buttons.add(b); add(b); }
+        NeonButton play = new NeonButton(Ui.W / 2.0 - 150, 488, 300, 50, "PLAY", bf, CYAN, app::showMapSelect);
+        NeonButton tut = new NeonButton(Ui.W / 2.0 - 150, 550, 300, 50, "TUTORIAL", bf, new Color(0x3bff8a), app::startTutorial);
+        NeonButton cat = new NeonButton(Ui.W / 2.0 - 150, 612, 300, 50, "CATALOG", bf, CYAN, app::showCatalog);
+        NeonButton how = new NeonButton(Ui.W / 2.0 - 150, 674, 300, 50, "HOW TO PLAY", bf, MAGENTA, this::toggleHelp);
+        NeonButton quit = new NeonButton(Ui.W / 2.0 - 150, 736, 300, 50, "QUIT", bf, YELLOW, app::quit);
+        for (NeonButton b : new NeonButton[] { play, tut, cat, how, quit }) { buttons.add(b); add(b); }
         // AUDIO: Sound / Music toggles under the main buttons
-        audioToggles = AudioToggle.pair(Ui.W / 2.0 - 150, 728, 145, 38, 10, "SOUND", "MUSIC", chips);
+        audioToggles = AudioToggle.pair(Ui.W / 2.0 - 150, 800, 145, 38, 10, "SOUND", "MUSIC", chips);
         for (UIButton c : chips) add(c);
 
         // ---- CRT overlay, HUD frame, readouts
@@ -143,7 +145,7 @@ public final class MenuScreen extends GCompound {
         sysLabel = Ui.label("SYS.ONLINE  •", 44, 52, mono, new Color(0x3bff8a));
         threatLabel = Ui.label("THREAT LVL: PALANTIR", 44, Ui.H - 40, mono, MAGENTA);
         verLabel = Ui.label(lindefense.Version.LABEL, Ui.W - 150, 52, mono, YELLOW);
-        tickerLabel = Ui.label("LINDEFENSE // 100 WAVES // 20 MODELS // 4 MAPS", 0, Ui.H - 40, mono, Ui.withAlpha(CYAN, 200));
+        tickerLabel = Ui.label("LINDEFENSE // 100 WAVES // 18 TOWERS // 6 HEROES // 4 MAPS", 0, Ui.H - 40, mono, Ui.withAlpha(CYAN, 200));
         tickerLabel.setLocation(Ui.W - 44 - tickerLabel.getWidth(), Ui.H - 40);
         add(sysLabel); add(threatLabel); add(verLabel); add(tickerLabel);
         GLabel foot = Ui.label("JAVA + STANFORD ACM GRAPHICS  •  RESIZE THE WINDOW FREELY", 0, 0, menuFont(Font.PLAIN, 12), Ui.withAlpha(CYAN, 120));
@@ -267,12 +269,13 @@ public final class MenuScreen extends GCompound {
         double y = 146, x = Ui.W / 2.0 - 410;
         String[][] sections = {
             { "GOAL", "Survive all 100 waves and destroy Palantir, the BAD-class final boss, on Wave 100. You start with $650 and 100 lives." },
-            { "BUILDING", "Pick a faction tab (or press B for all towers), click a tower, then click a free spot beside the track. Each tower has three upgrades named after its model lineup, an active ability with a radial cooldown (use the ability bar along the bottom of the map), and several targeting priorities. Heroes can only be placed once." },
+            { "BUILDING", "Pick a faction tab (or press B for all towers), click a tower, then click a free spot beside the track. Each tower has three upgrades named after its model lineup (Zethos has four) and several targeting priorities. The original towers are passive; Zethos has the Reality Collapse ability." },
+            { "HERO STORE", "Press HEROES (or K) in game. Buy a hero once to unlock it permanently: Brad Lindemann, Brandon, Rohan, Ronil, Shashank or Owen. Unlocked heroes deploy free, once per match, and each has an active ability (ability bar along the bottom). New here? Try TUTORIAL; look anything up in CATALOG." },
             { "ECONOMY", "Enemies pay cash when destroyed; every wave pays a bonus. Perplexity earns research income. Selling refunds 70% of everything spent on a tower." },
             { "ENEMIES", "Data structures and sorting algorithms, each with a mechanic: Bubble Sort swaps places, Heap Sort shields allies and is Lead-type (Sharp damage cannot hurt it), Merge/Quick/Counting/TimSort split, Bucket Sort stores weaker enemies, Radix Sort turns Lead-type in its armoured phases, Shell Sort gap-jumps." },
-            { "MODIFIERS", "Camo enemies need detection: built into Student + AI, Grok and Perplexity, gained by Gemini and Llama at their second upgrade, and shared by Perplexity with every tower in its radius. Regrow enemies heal. Fortified enemies have double HP (Qwen strips it)." },
+            { "MODIFIERS", "Camo enemies need detection: built into Grok and Perplexity, gained by Gemini and Llama at their second upgrade, and shared by Perplexity with every tower in its radius. Regrow enemies heal. Fortified enemies have double HP (Qwen strips it)." },
             { "BOSSES", "Bellarmine College Prep (MOAB, wave 40), SW Resource Consultant (BFB, 60), 3Com (ZOMG, 80), Lockheed Martin (DDT, 90) and Palantir (BAD, 100), whose Predictive Surveillance disrupts your strongest towers - telegraphed for 3 s, blocked for towers inside Perplexity's Predictive Analysis radius." },
-            { "CONTROLS", "Space: next wave.  1/2/3: speed.  P: pause.  B: all towers.  Esc / right-click: cancel (Esc with nothing selected opens the pause menu).  U: upgrade.  S: sell.  A: ability.  T: targeting.  H: in-game help.  M: music on/off.  N: sound on/off." },
+            { "CONTROLS", "Space: next wave.  1/2/3: speed.  P: pause.  B: all towers.  Esc / right-click: cancel (Esc with nothing selected opens the pause menu).  U: upgrade.  S: sell.  A: ability.  T: targeting.  K: Hero Store.  H: in-game help.  M: music on/off.  N: sound on/off." },
         };
         Font hf = menuFont(Font.BOLD, 18), bf = Cyber.body(Font.PLAIN, 14);
         for (String[] s : sections) {

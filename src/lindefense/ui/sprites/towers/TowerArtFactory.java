@@ -9,8 +9,19 @@ public final class TowerArtFactory {
     /** Art stages used by the four game tiers 0-3: every upgrade is a visible jump and the last one is the dramatic stage 4. */
     private static final int[] STAGE_FOR_TIER = { 0, 2, 3, 4 };
 
-    /** Maps a game tier (0-3) to the art stage (0-4) that draws it. */
+    /** Maps a standard tower's game tier (0-3) to the art stage (0-4) that draws it. */
     public static int artStage(int gameTier) { return STAGE_FOR_TIER[Math.max(0, Math.min(3, gameTier))]; }
+
+    /**
+     * Art stage for a tower type: standard towers use {@link #artStage(int)}; Zethos's five tiers (0-4) are five
+     * stages; heroes have a single look (Brad his General platform, the others stage 0).
+     */
+    public static int artStage(TowerType type, int gameTier) {
+        if (type == TowerType.BRAD_LINDEMANN) return 3;   // Brad's command platform (triple cannons, banner, radar)
+        if (type != null && type.isHero()) return 0;
+        if (type == TowerType.ZETHOS) return Math.max(0, Math.min(4, gameTier));
+        return artStage(gameTier);
+    }
 
     /**
      * Builds the body art for a tower.
@@ -39,9 +50,13 @@ public final class TowerArtFactory {
             case GLM: return new GlmArt(type, tier, r);
             case KIMI: return new KimiArt(type, tier, r);
             case MINIMAX: return new MiniMaxArt(type, tier, r);
-            case BELLARMINE_STUDENT: return new StudentArt(type, tier, r);
-            case BELLARMINE_STUDENT_AI: return new StudentAiArt(type, tier, r);
+            case ZETHOS: return new ZethosArt(type, tier, r);
             case BRAD_LINDEMANN: return new BradArt(type, tier, r);
+            case BRANDON: return new BrandonArt(type, tier, r);
+            case ROHAN: return new RohanArt(type, tier, r);
+            case RONIL: return new RonilArt(type, tier, r);
+            case SHASHANK: return new ShashankArt(type, tier, r);
+            case OWEN: return new OwenArt(type, tier, r);
             case DALLE_SPRITE: return new SpriteArt(type, tier, r);
             default: return new GenericArt(type, tier, r);
         }

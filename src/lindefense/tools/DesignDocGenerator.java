@@ -178,31 +178,36 @@ public final class DesignDocGenerator {
     private static void towers(PrintWriter w) {
         w.println("## 2. Towers");
         w.println();
-        w.println("All 20 towers have one base form and **exactly three** purchasable upgrades (four states, tier 0-3), bought in order,");
-        w.println("plus one ability. The displayed name is the family name and the spec's nickname is the subtitle. Tier labels are model");
-        w.println("names in increasing order of model intelligence (heroes use their own tier names); the upgrade mechanics and costs follow");
-        w.println("the spec's slot order. Source of truth for every number: `lindefense/tower/data/*.java`.");
+        w.println("The tower shop sells 18 towers. The 17 original towers have one base form and **exactly three** purchasable upgrades");
+        w.println("(tier 0-3) and are **passive** (no active abilities). **Zethos** (Primary) has **four** upgrades and the Reality Collapse");
+        w.println("ability. The six **heroes** are not in the tower shop: they are unlocked once in the **Hero Store** (permanent, saved between");
+        w.println("sessions), deploy for free once per match, have no upgrades and each has an active ability. Heroes and Zethos are specified");
+        w.println("in map units: 1 unit = " + f(TowerStats.MAP_UNIT) + " px (tables below are in px). Source of truth for every number: `lindefense/tower/data/*.java`.");
         w.println();
         w.println("### 2.1 Summary");
         w.println();
-        w.println("| Tower | Faction | Nickname | Tiers (base -> U3) | Base | U1 | U2 | U3 | Total | Sell (max) | Ability (cooldown) |");
-        w.println("|---|---|---|---|---|---|---|---|---|---|---|");
+        w.println("| Tower | Faction | Nickname | Tiers (base -> max) | Price | Upgrades | Total | Sell (max) | Ability (cooldown) |");
+        w.println("|---|---|---|---|---|---|---|---|---|");
         for (TowerType t : TowerType.purchasable()) {
             TowerDef d = TowerCatalog.get(t);
-            w.printf("| %s | %s | %s | %s | $%d | $%d | $%d | $%d | $%d | $%d | %s (%ss) |%n", t.displayName, t.faction.label, d.subtitle,
-                String.join(" -> ", d.tierLabels), d.baseCost,
-                d.upgrades[0].cost, d.upgrades[1].cost, d.upgrades[2].cost, d.totalCost(),
-                (int) Math.floor(d.totalCost() * Shop.SELL_FRACTION), d.ability.name, f(d.ability.cooldown));
+            StringBuilder ups = new StringBuilder();
+            for (UpgradeDef u : d.upgrades) { if (ups.length() > 0) ups.append(" / "); ups.append('$').append(u.cost); }
+            String price = t.isHero() ? "Hero Store $" + d.unlockCost + " (deploy free)" : "$" + d.baseCost;
+            w.printf("| %s | %s | %s | %s | %s | %s | %s | %s | %s |%n", t.displayName, t.faction.label, d.subtitle,
+                String.join(" -> ", d.tierLabels), price, ups.length() == 0 ? "none" : ups.toString(),
+                t.isHero() ? "-" : "$" + d.totalCost(), t.isHero() ? "no refund" : "$" + (int) Math.floor(d.totalCost() * Shop.SELL_FRACTION),
+                d.ability == null ? "none (passive)" : d.ability.name + " (" + f(d.ability.cooldown) + "s)");
         }
         w.println();
-        w.println("Damage types per tower: Student = Blunt, Student + AI / Gemini / GPT / DeepSeek / Copilot / Qwen / MiniMax = Energy, Brad / Grok / Cohere = Explosive,");
-        w.println("Claude = Sharp, Llama / Mistral = Kinetic, DALL-E / Sora / Perplexity / Kimi = Magic, Suno = Sonic, GLM = Gravity. Unspecified projectile speeds default to 450 px/s.");
+        w.println("Damage types per tower: Gemini / GPT / Zethos / DeepSeek / Copilot / Qwen / MiniMax / Brandon / Rohan / Shashank / Owen = Energy,");
+        w.println("Brad / Ronil / Grok / Cohere = Explosive, Claude = Sharp, Llama / Mistral = Kinetic, DALL-E / Sora / Perplexity / Kimi = Magic, Suno = Sonic,");
+        w.println("GLM = Gravity. Unspecified projectile speeds of the original towers default to 450 px/s.");
         w.println();
         w.println("### 2.2 Per-tower detail");
         w.println();
         for (TowerType t : TowerType.purchasable()) {
             TowerDef d = TowerCatalog.get(t);
-            w.println("#### " + t.displayName + " - " + d.subtitle + " (" + t.faction.label + ", $" + d.baseCost + ")");
+            w.println("#### " + t.displayName + " - " + d.subtitle + " (" + t.faction.label + ", " + (t.isHero() ? "Hero Store $" + d.unlockCost : "$" + d.baseCost) + ")");
             w.println();
             w.println(d.description);
             w.println();
@@ -221,7 +226,8 @@ public final class DesignDocGenerator {
                 w.println("- **U" + (i + 1) + " " + u.name + "** ($" + u.cost + "): " + u.description);
             }
             AbilityDef a = d.ability;
-            w.println("- **Ability: " + a.name + "** (cooldown " + f(a.cooldown) + " s" + (a.needsTarget ? ", player-chosen location" : "") + "): " + a.description);
+            if (a == null) w.println("- No active ability (passive tower).");
+            else w.println("- **Ability: " + a.name + "** (cooldown " + f(a.cooldown) + " s" + (a.needsTarget ? ", player-chosen location" : "") + "): " + a.description);
             w.println();
         }
     }

@@ -40,6 +40,7 @@ public class LindefenseProgram extends GraphicsProgram {
     private final ScaledLayer root = new ScaledLayer();
     private MenuScreen menu;
     private MapSelectScreen mapSelect;
+    private CatalogScreen catalog;
     private GameScreen gameScreen;
     private long lastNanos;
     private Timer timer;
@@ -112,6 +113,7 @@ public class LindefenseProgram extends GraphicsProgram {
             root.fit(canvas.getWidth(), canvas.getHeight());
         }
         if (gameScreen != null) gameScreen.frame(dt);
+        else if (catalog != null) catalog.frame(dt);
         else if (menu != null && menu.isVisible()) menu.frame(dt);
         else if (mapSelect != null) mapSelect.frame(dt);
         if (demo != null) demo.frame(dt);
@@ -122,6 +124,7 @@ public class LindefenseProgram extends GraphicsProgram {
     private void clearScreens() {
         root.removeAll();
         gameScreen = null;
+        catalog = null;
     }
 
     public void showMenu() {
@@ -143,7 +146,29 @@ public class LindefenseProgram extends GraphicsProgram {
 
     public void startGame(int mapIndex) {
         lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_SELECT);   // AUDIO HOOK
-        startGame(new Game(MapCatalog.create(mapIndex), System.nanoTime(), lindefense.sim.Difficulty.getSelected()));   // DIFFICULTY HOOK
+        Game g = new Game(MapCatalog.create(mapIndex), System.nanoTime(), lindefense.sim.Difficulty.getSelected());   // DIFFICULTY HOOK
+        g.setHeroCollection(lindefense.sim.HeroCollection.persistent());   // Hero Store unlocks persist across sessions
+        startGame(g);
+    }
+
+    /**
+     * TUTORIAL (main menu): a guided match on the first map at the default difficulty. It uses an in-memory hero
+     * collection, so practice unlocks never touch the saved Hero Store progress.
+     */
+    public void startTutorial() {
+        lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_SELECT);   // AUDIO HOOK
+        Game g = new Game(MapCatalog.create(0), System.nanoTime(), lindefense.sim.Difficulty.O1);
+        startGame(g, true);
+    }
+
+    /** CATALOG (main menu): every enemy, tower and hero. */
+    public void showCatalog() {
+        clearScreens();
+        menu = null;
+        mapSelect = null;
+        catalog = new CatalogScreen(this);
+        root.add(catalog);
+        getGCanvas().repaint();
     }
 
     /** RESTART: throws the running level away and starts a fresh game on the same map and difficulty. */
@@ -155,11 +180,13 @@ public class LindefenseProgram extends GraphicsProgram {
     /** QUIT LEVEL: abandons the running level and returns to the map / difficulty select screen. */
     public void quitLevel() { showMapSelect(); }
 
-    private void startGame(Game game) {
+    private void startGame(Game game) { startGame(game, false); }
+
+    private void startGame(Game game, boolean tutorial) {
         clearScreens();
         menu = null;
         mapSelect = null;
-        gameScreen = new GameScreen(this, game);
+        gameScreen = new GameScreen(this, game, tutorial);
         root.add(gameScreen);
         getGCanvas().requestFocusInWindow();
         getGCanvas().repaint();
@@ -197,6 +224,7 @@ public class LindefenseProgram extends GraphicsProgram {
         double lx = root.toLogicalX(e.getX()), ly = root.toLogicalY(e.getY());
         boolean right = SwingUtilities.isRightMouseButton(e) || e.isControlDown();
         if (gameScreen != null) gameScreen.mousePressed(lx, ly, right);
+        else if (catalog != null) catalog.mousePressed(lx, ly);
         else if (mapSelect != null) mapSelect.mousePressed(lx, ly);
         else if (menu != null) menu.mousePressed(lx, ly);
         getGCanvas().repaint();
@@ -205,6 +233,7 @@ public class LindefenseProgram extends GraphicsProgram {
     @Override public void mouseMoved(MouseEvent e) {
         double lx = root.toLogicalX(e.getX()), ly = root.toLogicalY(e.getY());
         if (gameScreen != null) gameScreen.mouseMoved(lx, ly);
+        else if (catalog != null) catalog.mouseMoved(lx, ly);
         else if (mapSelect != null) mapSelect.mouseMoved(lx, ly);
         else if (menu != null) menu.mouseMoved(lx, ly);
     }
@@ -219,6 +248,7 @@ public class LindefenseProgram extends GraphicsProgram {
             return;
         }
         if (gameScreen != null) gameScreen.keyPressed(e);
+        else if (catalog != null) catalog.keyPressed(e);
         else if (e.getKeyCode() == KeyEvent.VK_ESCAPE && mapSelect != null) showMenu();
         else if (menu != null) menu.skipIntro();
     }
@@ -226,6 +256,7 @@ public class LindefenseProgram extends GraphicsProgram {
     /** Exposed for tests / tooling. */
     public ScaledLayer getRoot() { return root; }
     public GameScreen getGameScreen() { return gameScreen; }
+    public CatalogScreen getCatalog() { return catalog; }
     public Game getGame() { return gameScreen == null ? null : gameScreen.getGame(); }
     public Color getBackgroundColor() { return Ui.BG; }
 }

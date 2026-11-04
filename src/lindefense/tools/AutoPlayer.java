@@ -65,7 +65,8 @@ public final class AutoPlayer {
 
     static {
         TowerType GEM = TowerType.GEMINI, CLA = TowerType.CLAUDE, GPT = TowerType.GPT, DS = TowerType.DEEPSEEK, COP = TowerType.COPILOT,
-            PER = TowerType.PERPLEXITY, COH = TowerType.COHERE, BRAD = TowerType.BRAD_LINDEMANN, AI = TowerType.BELLARMINE_STUDENT_AI,
+            PER = TowerType.PERPLEXITY, COH = TowerType.COHERE, BRAD = TowerType.BRAD_LINDEMANN, ZET = TowerType.ZETHOS,
+            BRN = TowerType.BRANDON, ROH = TowerType.ROHAN, RON = TowerType.RONIL, SHA = TowerType.SHASHANK, OWN = TowerType.OWEN,
             QWEN = TowerType.QWEN, KIMI = TowerType.KIMI, MM = TowerType.MINIMAX, SUNO = TowerType.SUNO, GLM = TowerType.GLM,
             GROK = TowerType.GROK, SORA = TowerType.SORA, MIS = TowerType.MISTRAL, LLA = TowerType.LLAMA, DAL = TowerType.DALLE;
         // efficient: cheap early defence, Perplexity (camo vision + income), then the DeepSeek / Brad / Qwen core
@@ -75,7 +76,7 @@ public final class AutoPlayer {
         s(COH, 0, 1, 1); s(PER, 0, 2, 1); s(PER, 0, 3, 1);          // +$250 per round
         s(DS, 0, 2, 1); s(DS, 0, 3, 1); s(DS, 1, 0, 1); s(DS, 1, 1, 1); s(DS, 1, 2, 1); s(DS, 1, 3, 1);
         s(PER, 1, 3, 1); s(DS, 2, 3, 1); s(PER, 2, 3, 14); s(QWEN, 0, 2, 1); s(PER, 3, 3, 22);   // research income pays back in ~12 rounds
-        s(BRAD, 0, 0, 28); s(BRAD, 0, 1, 32); s(BRAD, 0, 2, 42); s(BRAD, 0, 3, 55);   // the hero is a big saving: only once the core is up
+        s(BRAD, 0, 0, 28);   // the hero is a big Hero Store purchase: only once the core is up
         s(DS, 3, 3, 1); s(QWEN, 0, 3, 1); s(DS, 4, 3, 1); s(COH, 0, 3, 1); s(GEM, 0, 3, 1); s(GPT, 0, 3, 1);
         // mixed: every tower type, used by the "every tower contributes" test
         cur = MIXED;
@@ -86,8 +87,8 @@ public final class AutoPlayer {
         s(COH, 0, 1, 1); s(GEM, 0, 2, 1); s(CLA, 0, 2, 1);
         s(COH, 0, 2, 1); s(GPT, 0, 2, 1); s(DS, 0, 2, 1);
         s(COH, 0, 3, 1); s(DS, 0, 3, 1); s(GEM, 0, 3, 1);
-        s(AI, 0, 1, 1); s(CLA, 0, 3, 1); s(GPT, 0, 3, 1);
-        s(BRAD, 0, 0, 1); s(BRAD, 0, 1, 1); s(BRAD, 0, 2, 1); s(BRAD, 0, 3, 1);
+        s(ZET, 0, 2, 1); s(CLA, 0, 3, 1); s(GPT, 0, 3, 1); s(ZET, 0, 4, 1);
+        s(BRAD, 0, 0, 1); s(SHA, 0, 0, 1); s(ROH, 0, 0, 1); s(BRN, 0, 0, 1); s(OWN, 0, 0, 1); s(RON, 0, 0, 1);
         s(QWEN, 0, 2, 1); s(QWEN, 0, 3, 1);
         s(KIMI, 0, 1, 1); s(MM, 0, 1, 1); s(SUNO, 0, 2, 1); s(GLM, 0, 2, 1);
         s(KIMI, 0, 3, 1); s(MM, 0, 3, 1); s(SUNO, 0, 3, 1); s(GLM, 0, 3, 1);
@@ -248,7 +249,7 @@ public final class AutoPlayer {
     private static boolean hasDetection(Game g) {
         for (Tower t : mine(g)) {
             if (t.getType() == TowerType.PERPLEXITY && t.getTier() >= 1) return true;   // U1: every tower can target all camo
-            if (t.getType() == TowerType.BELLARMINE_STUDENT_AI || t.getType() == TowerType.GROK) return true;
+            if (t.getType() == TowerType.GROK) return true;
         }
         return false;
     }
@@ -284,10 +285,10 @@ public final class AutoPlayer {
             if (maxTowers < 40 && st.type == TowerType.PERPLEXITY && st.copy >= 1) continue;   // slots are scarce: one research tower only
             Tower t = nth(g, st.type, st.copy);
             if (t == null) {
-                if (st.type.isHero() && count(g, st.type) > 0) continue;       // one copy only
+                if (st.type.isHero() && (count(g, st.type) > 0 || g.isHeroDeployed(st.type))) continue;   // once per match
                 if (st.copy > count(g, st.type)) continue;                      // copies are bought in order
                 if (towers >= maxTowers) continue;                              // handicap: upgrades only
-                if (!tryBuy(g, st.type, spots, samples, random)) { if (g.getCash() < price(st.type)) return; continue; }
+                if (!tryBuy(g, st.type, spots, samples, random)) { if (g.getCash() < price(g, st.type)) return; continue; }
                 return;
             }
             if (t.getTier() >= st.tier) continue;
@@ -304,10 +305,14 @@ public final class AutoPlayer {
         return n;
     }
 
+    /** Cash needed to get the type onto the map: Hero Store unlock price for a locked hero, else the base cost. */
     private static int price(TowerType t) { return TowerCatalog.get(t).baseCost; }
+    private static int price(Game g, TowerType t) { return t.isHero() && !g.isHeroUnlocked(t) ? TowerCatalog.get(t).unlockCost : price(t); }
 
     private static boolean tryBuy(Game g, TowerType type, List<Vec> spots, List<Vec> samples, boolean random) {
-        if (g.getCash() < price(type)) return false;
+        if (g.getCash() < price(g, type)) return false;
+        if (type.isHero() && g.isHeroDeployed(type)) return false;
+        if (type.isHero() && !g.isHeroUnlocked(type) && !g.purchaseHero(type)) return false;   // Hero Store first
         Vec p = bestSpot(g, type, spots, samples, random);
         if (p == null) return false;
         Tower t = g.placeTower(type, p);
@@ -399,12 +404,9 @@ public final class AutoPlayer {
                 case DEEPSEEK:
                     if (alive >= 6) g.activateAbility(t);
                     continue;
-                case BRAD_LINDEMANN: {
-                    int cooling = 0;
-                    for (Tower o : mine(g)) if (o != t && o.getAbility() != null && !o.isAbilityReady() && o.getPosition().dist(t.getPosition()) <= t.getStats().range) cooling++;
-                    if (danger && cooling >= 2) g.activateAbility(t);
+                case BRAD_LINDEMANN: case SHASHANK:
+                    if (alive >= 6) g.activateAbility(t);
                     continue;
-                }
                 case SORA:
                     if (leakRisk) g.activateAbility(t);
                     continue;

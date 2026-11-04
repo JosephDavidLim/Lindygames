@@ -18,14 +18,18 @@ public final class Behaviors {
     private static final TowerBehavior GENERIC = new GenericBehavior();
 
     static {
-        // Heroes (B1)
-        MAP.put(TowerType.BELLARMINE_STUDENT, new BellarmineStudentBehavior());
-        MAP.put(TowerType.BELLARMINE_STUDENT_AI, new BellarmineStudentAiBehavior());
+        // Hero Store heroes
         MAP.put(TowerType.BRAD_LINDEMANN, new BradLindemannBehavior());
+        MAP.put(TowerType.BRANDON, new BrandonBehavior());
+        MAP.put(TowerType.ROHAN, new RohanBehavior());
+        MAP.put(TowerType.RONIL, new RonilBehavior());
+        MAP.put(TowerType.SHASHANK, new ShashankBehavior());
+        MAP.put(TowerType.OWEN, new OwenBehavior());
         // Primary (B1)
         MAP.put(TowerType.GEMINI, new GeminiBehavior());
         MAP.put(TowerType.CLAUDE, new ClaudeBehavior());
         MAP.put(TowerType.GPT, new GptBehavior());
+        MAP.put(TowerType.ZETHOS, new ZethosBehavior());
         // Military (B1)
         MAP.put(TowerType.DEEPSEEK, new DeepSeekBehavior());
         MAP.put(TowerType.COPILOT, new CopilotBehavior());

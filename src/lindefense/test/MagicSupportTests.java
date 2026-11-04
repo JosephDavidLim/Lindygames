@@ -53,19 +53,16 @@ public final class MagicSupportTests {
         run("b2.dalle.paintZones", MagicSupportTests::dallePaintZones);
         run("b2.dalle.creatures", MagicSupportTests::dalleCreatures);
         run("b2.dalle.armorCrackDowngrade", MagicSupportTests::dalleArmorCrack);
-        run("b2.dalle.outpainting", MagicSupportTests::dalleOutpainting);
         run("b2.sora.sceneRewind", MagicSupportTests::soraSceneRewind);
         run("b2.sora.timeLoop", MagicSupportTests::soraTimeLoop);
         run("b2.suno.bassDrop", MagicSupportTests::sunoBassDrop);
         run("b2.suno.chordStrike", MagicSupportTests::sunoChord);
         run("b2.suno.symphony", MagicSupportTests::sunoSymphony);
-        run("b2.suno.symphonicBassDrop", MagicSupportTests::sunoAbility);
         run("b2.grok.burnSpread", MagicSupportTests::grokBurnSpread);
         run("b2.grok.paradoxVolley", MagicSupportTests::grokVolley);
         run("b2.grok.chaosMode", MagicSupportTests::grokChaos);
         run("b2.perplexity.detectionAndReveal", MagicSupportTests::perplexityDetection);
         run("b2.perplexity.roundIncome", MagicSupportTests::perplexityIncome);
-        run("b2.abilityCooldowns", MagicSupportTests::abilityCooldowns);
     }
 
     private static Game frozen() { Game g = newGame(0); g.setGlobalEnemySpeedMultiplier(0); return g; }
@@ -125,10 +122,7 @@ public final class MagicSupportTests {
         check(near(s.fieldMarkPct, 0.20) && near(s.auraRangeBonus, 0.15) && s.auraSurveillanceImmunity, "Perplexity U2: +20% mark, +15% range, Surveillance immunity");
         s = TowerCatalog.get(TowerType.PERPLEXITY).statsForTier(3);
         check(s.incomePerWave == 250, "Perplexity U3: +$250 per round");
-        int[] cds = { 50, 75, 60, 60, 90 };
-        for (int i = 0; i < BASE.length; i++) check(TowerCatalog.get((TowerType) BASE[i][0]).ability.cooldown == cds[i], BASE[i][0] + " ability cooldown " + cds[i]);
-        check(TowerCatalog.get(TowerType.DALLE).ability.needsTarget, "Outpainting needs a player-chosen location");
-        check(!TowerCatalog.get(TowerType.SORA).ability.needsTarget && !TowerCatalog.get(TowerType.GROK).ability.needsTarget, "other abilities need no location");
+        for (Object[] r : BASE) check(TowerCatalog.get((TowerType) r[0]).ability == null, r[0] + " has no active ability");
     }
 
     private static void baseAttacksDamageEnemies() {
@@ -154,15 +148,6 @@ public final class MagicSupportTests {
         g.upgradeTower(s);
         g.run(10);
         check(near(in.getSlowFraction(), 0.55), "U1 field slow is 55% (slows do not stack: strongest applies)");
-        // ability: rewind
-        Game g2 = frozen();
-        Tower s2 = towerNearTrack(g2, TowerType.SORA, 0, 400);
-        Enemy n = at(g2, EnemyType.QUICK_SORT, 800), b = at(g2, EnemyType.BELLARMINE_COLLEGE_PREP, 800);
-        double nn = n.nominalSpeed(), bn = b.nominalSpeed();
-        s2.resetAbilityCooldown();
-        check(g2.activateAbility(s2), "Cinematic Rewind activates");
-        check(Math.abs(800 - n.getDistance() - nn * 3) < 1e-6, "non-boss enemies rewind 3 s of their own travel");
-        check(Math.abs(800 - b.getDistance() - bn * 1) < 1e-6, "bosses rewind 1 s");
     }
 
     private static void suno() {
@@ -209,23 +194,6 @@ public final class MagicSupportTests {
         Tower u2 = forcePlace(g2, TowerType.GROK, buildableNear(g2, new Vec(900, 840), 100), 2);
         u2.setTargeting(Targeting.DENSEST_CLUSTER);
         check(u2.getTargeting() == Targeting.DENSEST_CLUSTER, "Grok U2 can select Densest Cluster");
-        // Real-Time Override: nearby towers +100% damage vs MOAB-class for 10 s
-        Game g3 = frozen();
-        Tower gk = towerNearTrack(g3, TowerType.GROK, 0, 400);
-        Tower ally = forcePlace(g3, TowerType.GPT, buildableNear(g3, gk.getPosition().add(new Vec(80, 0)), 80), 0);
-        Tower distant = forcePlace(g3, TowerType.GPT, buildableNear(g3, new Vec(1100, 840), 100), 0);
-        Enemy boss = at(g3, EnemyType.BELLARMINE_COLLEGE_PREP, 400);
-        Enemy normal = scaled(g3, EnemyType.DYNAMIC_ARRAY, 380, 20);
-        HitSpec h = new HitSpec(4, DamageType.ENERGY);
-        double before = g3.getCombat().applyHit(boss, h, ally, 1, 0);
-        gk.resetAbilityCooldown();
-        check(g3.activateAbility(gk), "Real-Time Override activates");
-        double after = g3.getCombat().applyHit(boss, h, ally, 1, 0);
-        check(near(after, before * 2), "tower within 200 px deals +100% vs MOAB-class: " + before + " -> " + after);
-        check(near(g3.getCombat().applyHit(boss, h, distant, 1, 0), before), "...towers outside 200 px are not buffed");
-        check(near(g3.getCombat().applyHit(normal, h, ally, 1, 0), 4), "...and non-boss damage is unchanged");
-        runSeconds(g3, 10.2);
-        check(near(g3.getCombat().applyHit(boss, h, ally, 1, 0), before), "buff ends after 10 s");
     }
 
     private static void perplexity() {
@@ -250,20 +218,6 @@ public final class MagicSupportTests {
         check(gpt.isSurveillanceImmune(), "towers in range are immune to Predictive Surveillance");
         double dmg = g2.getCombat().applyHit(marked, new HitSpec(2, DamageType.ENERGY), null, 1, 0);
         check(near(dmg, 2 * 1.2), "marked enemies take +20% from all sources, got " + dmg);
-        // ability: 20% of the round's pop value, max $3000
-        Game g3 = newGame(0);
-        Tower p3 = towerNearTrack(g3, TowerType.PERPLEXITY, 0, 400);
-        g3.addPopValue(1000);
-        double cash = g3.getCash();
-        p3.resetAbilityCooldown();
-        check(g3.activateAbility(p3) && near(g3.getCash(), cash + 200), "Deep Research Scrape pays 20% of the round's pop value");
-        p3.resetAbilityCooldown();
-        g3.addPopValue(1_000_000);
-        cash = g3.getCash();
-        g3.activateAbility(p3);
-        check(near(g3.getCash(), cash + 3000), "...capped at $3,000");
-        g3.onWaveStarted(2, lindefense.wave.WaveData.get(2));
-        check(g3.getRoundPopValue() == 0, "the pop-value counter resets every round");
         // enemy kills add to the round pop value
         Game g4 = newGame(0);
         Enemy e = spawnAt(g4, EnemyType.STATIC_ARRAY, null, 0, 300);
@@ -353,31 +307,6 @@ public final class MagicSupportTests {
         check(!boss.isArmorCracked(), "bosses are not cracked");
         runSeconds(g, 4.5);
         check(!heap.isArmorCracked(), "crack ends shortly after the zone expires");
-    }
-
-    private static void dalleOutpainting() {
-        Game g = newGame(0);
-        Tower t = towerNearTrack(g, TowerType.DALLE, 0, 100);
-        Enemy in = g.getEnemyManager().spawnScaled(EnemyType.DYNAMIC_ARRAY, null, 0, 600, 5000, 1.0);
-        Enemy out = g.getEnemyManager().spawnScaled(EnemyType.DYNAMIC_ARRAY, null, 0, 900, 5000, 1.0);
-        g.getEnemyManager().update(0);
-        t.resetAbilityCooldown();
-        check(!g.activateAbility(t), "Outpainting needs a player-chosen point");
-        check(t.isAbilityReady(), "...and a refused cast spends no cooldown");
-        Vec click = g.getMap().getRoutes().get(0).positionAt(620).add(new Vec(0, 25));
-        check(g.activateAbility(t, click), "Outpainting activates with a target");
-        check(near(t.getAbilityCooldownRemaining(), 50), "cooldown 50 s");
-        List<TrackZone> zs = g.getEffects().zonesOf(t, "outpaint");
-        check(zs.size() == 1, "one outpaint zone");
-        TrackZone z = zs.get(0);
-        check(g.getMap().getRoutes().get(0).distanceToPoint(z.center) < 1e-6, "the zone is snapped onto the track");
-        check(near(z.getRemaining(), 10) && near(z.speedCap, 0.25), "10 s, speed cap 25%");
-        double d0 = in.getDistance(), o0 = out.getDistance();
-        g.run(120);
-        double din = in.getDistance() - d0, dout = out.getDistance() - o0;
-        check(dout > 10 && din / dout > 0.2 && din / dout < 0.3, "enemies inside move at 25% speed (ratio " + din / dout + ")");
-        runSeconds(g, 8.2);
-        check(!z.isAlive() && g.getEffects().zonesOf(t, "outpaint").isEmpty(), "the zone ends after 10 s");
     }
 
     private static void soraSceneRewind() {
@@ -504,25 +433,6 @@ public final class MagicSupportTests {
         check(camo.getHp() == camo.getMaxHp(), "explosions only pick enemies the tower can target (not undetected Camo)");
         check(near(t.getStats().p("symphonyRadius"), 50), "explosion radius 50 from the data table");
         check(Math.abs(t.getStats().interval() - 0.4) < 1e-9, "U3 interval 0.4");
-    }
-
-    private static void sunoAbility() {
-        Game g = frozen();
-        Tower t = towerNearTrack(g, TowerType.SUNO, 0, 100);
-        Enemy slow = g.getEnemyManager().spawnScaled(EnemyType.DYNAMIC_ARRAY, null, 0, 600, 500, 1.0);
-        Enemy fast = g.getEnemyManager().spawnScaled(EnemyType.DYNAMIC_ARRAY, null, 0, 700, 500, 2.0);
-        Enemy bossCapped = g.getEnemyManager().spawnScaled(EnemyType.BELLARMINE_COLLEGE_PREP, null, 0, 800, 1000, 100.0);
-        Enemy bossRef = g.getEnemyManager().spawnScaled(EnemyType.BELLARMINE_COLLEGE_PREP, null, 0, 850, 1000, 1.0);
-        g.getEnemyManager().update(0);
-        double refBoss = g.getCombat().applyHit(bossRef, new HitSpec(200, DamageType.SONIC), null, 1, 0);
-        double bossBefore = bossCapped.getHp();
-        t.resetAbilityCooldown();
-        check(g.activateAbility(t), "Symphonic Bass Drop activates");
-        check(near(slow.getMaxHp() - slow.getHp(), 4 * slow.speedMultiplier()), "damage = 4 x speed multiplier, got " + (slow.getMaxHp() - slow.getHp()));
-        check(near(fast.getMaxHp() - fast.getHp(), 4 * fast.speedMultiplier()) && fast.speedMultiplier() > slow.speedMultiplier(), "faster enemies take more");
-        check(4 * bossCapped.speedMultiplier() > 200, "precondition: uncapped boss damage exceeds 200");
-        check(near(bossBefore - bossCapped.getHp(), refBoss), "boss damage capped at 200 (" + (bossBefore - bossCapped.getHp()) + " vs " + refBoss + ")");
-        check(near(t.getAbilityCooldownRemaining(), 60), "cooldown 60 s");
     }
 
     private static void grokBurnSpread() {
@@ -656,24 +566,6 @@ public final class MagicSupportTests {
             without.onWaveCompleted(1, lindefense.wave.WaveData.get(1));
             double expected = tier < 3 ? 40 : 250;
             check(near((with.getCash() - c0) - (without.getCash() - c1), expected), "tier " + tier + " pays +$" + expected + " at round end, got " + ((with.getCash() - c0) - (without.getCash() - c1)));
-        }
-    }
-
-    private static void abilityCooldowns() {
-        for (Object[] r : BASE) {
-            TowerType type = (TowerType) r[0];
-            Game g = newGame(0);
-            Tower t = towerNearTrack(g, type, 0, 100);
-            double cd = t.getAbility().cooldown;
-            check(near(t.getAbilityCooldownRemaining(), cd / 2) && !t.isAbilityReady(), type + " ability starts at 50% cooldown");
-            Vec pt = g.getMap().getRoutes().get(0).positionAt(300);
-            check(!g.activateAbility(t, pt), type + " cannot be activated while cooling down");
-            runSeconds(g, cd / 2 - 1);
-            check(!t.isAbilityReady(), type + " not ready just before half the cooldown has passed (game time)");
-            runSeconds(g, 1.1);
-            check(t.isAbilityReady(), type + " ready after cooldown/2 of game time");
-            check(g.activateAbility(t, pt), type + " activates");
-            check(near(t.getAbilityCooldownRemaining(), cd) && !t.isAbilityReady(), type + " full cooldown after use");
         }
     }
 

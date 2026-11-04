@@ -63,6 +63,7 @@ public final class HeadlessTests {
         EnginePrimitiveTests.runAll();
         HeroPrimaryMilitaryTests.runAll();
         MagicSupportTests.runAll();
+        HeroStoreTests.runAll();
         TitanTests.runAll();
         BalanceTests.runAll();
         ConsistencyTests.runAll();
@@ -114,27 +115,24 @@ public final class HeadlessTests {
     // ------------------------------------------------------------------ tests
     private static void catalogIntegrity() {
         TowerType[] p = TowerType.purchasable();
-        check(p.length == 20, "20 purchasable towers, got " + p.length);
+        check(p.length == 24, "24 placeable units (6 heroes + 18 shop towers), got " + p.length);
+        check(TowerType.heroes().length == 6 && TowerType.shopTowers().length == 18, "6 Hero Store heroes, 18 shop towers");
         int heroes = 0;
-        int maxTotal = 0, secondTotal = 0; TowerType maxType = null;
         for (TowerType t : p) {
             TowerDef d = TowerCatalog.get(t);
             check(d != null, "def for " + t);
-            check(d.upgrades.length == 3, t + " has exactly 3 upgrades");
-            check(d.ability != null && d.ability.cooldown > 0, t + " has ability with cooldown");
-            check(d.baseCost > 0, t + " has cost");
-            for (int i = 0; i <= 3; i++) check(d.statsForTier(i) != null, t + " tier " + i + " stats");
-            for (int i = 0; i < 3; i++) check(d.upgrades[i].name.equals(d.tierLabels[i + 1]), t + " upgrade name is the tier label");
+            int ups = t.isHero() ? 0 : t == TowerType.ZETHOS ? TowerCatalog.ZETHOS_UPGRADES : TowerCatalog.STANDARD_UPGRADES;
+            check(d.upgrades.length == ups, t + " has exactly " + ups + " upgrades");
+            if (TowerCatalog.hasActiveAbility(t)) check(d.ability != null && d.ability.cooldown > 0, t + " has ability with cooldown");
+            else check(d.ability == null, t + " (original shop tower) has no special ability");
+            check(t.isHero() ? d.baseCost == 0 && d.unlockCost > 0 : d.baseCost > 0 && d.unlockCost == 0, t + " has cost (heroes: unlock price, free deploy)");
+            for (int i = 0; i <= ups; i++) check(d.statsForTier(i) != null, t + " tier " + i + " stats");
+            for (int i = 0; i < ups; i++) check(d.upgrades[i].name.equals(d.tierLabels[i + 1]), t + " upgrade name is the tier label");
             if (t.isHero()) heroes++;
-            int total = d.totalCost();
-            if (total > maxTotal) { secondTotal = maxTotal; maxTotal = total; maxType = t; }
-            else if (total > secondTotal) secondTotal = total;
-            check(d.tierLabels.length == 4, t + " 4 tier labels");
+            check(d.tierLabels.length == ups + 1, t + " " + (ups + 1) + " tier labels");
             check(d.subtitle != null && !d.subtitle.isEmpty(), t + " has a nickname subtitle");
         }
-        check(heroes == 3, "3 heroes");
-        check(maxType == TowerType.BRAD_LINDEMANN && maxTotal == 12500, "Brad is most expensive total ($12,500), got " + maxType + " " + maxTotal);
-        check(secondTotal <= 5100, "next highest total is about $5,100, got " + secondTotal);
+        check(heroes == 6, "6 heroes");
         int species = 0;
         for (EnemyType e : EnemyType.values()) if (e.isSpawnableSpecies() && !e.isBoss()) species++;
         check(species == 16, "16 standard enemy species, got " + species);
@@ -169,9 +167,10 @@ public final class HeadlessTests {
         check(g.getTowerManager().getTowers().isEmpty(), "tower removed");
         // Not enough cash
         Game g2 = newGame(0);
-        check(g2.placeTower(TowerType.BRAD_LINDEMANN, p) == null, "cannot afford Brad at start");
+        check(g2.placeTower(TowerType.BRAD_LINDEMANN, p) == null, "a locked hero cannot be placed");
+        check(!g2.purchaseHero(TowerType.BRAD_LINDEMANN), "cannot afford Brad's $1,800 unlock at start");
         check(g2.getCash() == Game.START_CASH, "cash unchanged after failed purchase");
-        // Every tower can be placed and upgraded 3 times (and never a 4th)
+        // Every tower can be placed and upgraded through its whole path (and never past it); heroes after unlocking
         Game g3 = newGame(0);
         g3.addCash(1_000_000, null);
         int i = 0;
@@ -179,11 +178,16 @@ public final class HeadlessTests {
             Vec q = new Vec(80 + (i % 10) * 100, 60 + (i / 10) * 60);
             i++;
             Vec b = buildableNear(g3, q, 150);
+            if (type.isHero()) {
+                check(g3.placeTower(type, b) == null, type + " locked: cannot be placed");
+                check(g3.purchaseHero(type) && !g3.purchaseHero(type), type + " bought once (no duplicate purchase)");
+            }
             Tower tt = g3.placeTower(type, b);
             check(tt != null, "place " + type);
             if (tt == null) continue;
-            for (int k = 0; k < 3; k++) check(g3.upgradeTower(tt), type + " upgrade " + (k + 1));
-            check(!g3.upgradeTower(tt), type + " no 4th upgrade");
+            int ups = TowerCatalog.get(type).upgrades.length;
+            for (int k = 0; k < ups; k++) check(g3.upgradeTower(tt), type + " upgrade " + (k + 1));
+            check(!g3.upgradeTower(tt), type + " no upgrade past tier " + ups);
             check(tt.getInvestedCost() == TowerCatalog.get(type).totalCost(), type + " invested matches");
             check(tt.getStats() != null && tt.isMaxed(), type + " T3 stats");
         }
@@ -734,24 +738,24 @@ public final class HeadlessTests {
     private static void abilityCooldowns() {
         Game g = newGame(0);
         Vec p = buildableNear(g, new Vec(400, 250), 200);
-        Tower st = forcePlace(g, TowerType.BELLARMINE_STUDENT, p, 0);
+        Tower st = forcePlace(g, TowerType.BRANDON, p, 0);
         check(!st.isAbilityReady(), "ability starts at 50% cooldown, not ready");
-        check(Math.abs(st.getAbilityCooldownRemaining() - 22.5) < 1e-9, "starting cooldown is 22.5 s (50% of 45)");
+        check(Math.abs(st.getAbilityCooldownRemaining() - 17.5) < 1e-9, "starting cooldown is 17.5 s (50% of 35)");
         check(!g.activateAbility(st), "cannot activate while cooling down");
-        runSeconds(g, 22.6);
+        runSeconds(g, 17.6);
         check(st.isAbilityReady(), "ready after the remaining 50%");
         check(g.activateAbility(st), "ability activates");
         check(!st.isAbilityReady(), "not ready after use");
-        check(Math.abs(st.getAbilityCooldownRemaining() - 45) < 1e-9, "cooldown 45 s");
+        check(Math.abs(st.getAbilityCooldownRemaining() - 35) < 1e-9, "cooldown 35 s");
         check(!g.activateAbility(st), "cannot activate during cooldown");
         check(Math.abs(st.selfRateMult() - 2.0) < 1e-9, "self buff applied (x2 rate)");
         runSeconds(g, 10.1);
         check(st.selfRateMult() == 1.0, "buff expired after 10 s");
-        runSeconds(g, 35);
+        runSeconds(g, 25);
         check(st.isAbilityReady(), "ready again after cooldown");
         // cooldowns count in game time: 3x speed finishes three times sooner in real seconds
         Game fast = newGame(0);
-        Tower ft = forcePlace(fast, TowerType.BELLARMINE_STUDENT, p, 0);
+        Tower ft = forcePlace(fast, TowerType.BRANDON, p, 0);
         fast.setSpeed(3);
         for (int i = 0; i < 60 * 8; i++) fast.advance(1.0 / 60);   // 8 real seconds = 24 game seconds
         check(ft.isAbilityReady(), "ability cooldown speeds up with fast-forward");
@@ -762,7 +766,8 @@ public final class HeadlessTests {
             gg.setGlobalEnemySpeedMultiplier(0);
             Path r = gg.getMap().getRoutes().get(0);
             Vec q = buildableNear(gg, r.positionAt(500).add(new Vec(0, -70)), 120);
-            Tower t = forcePlace(gg, type, q, 3);
+            Tower t = forcePlace(gg, type, q, Math.min(3, TowerCatalog.get(type).upgrades.length));
+            if (t.getAbility() == null) { check(!gg.activateAbility(t), type + " has no ability to activate"); continue; }
             spawnAt(gg, EnemyType.HEAP_SORT, null, 0, 500);
             spawnAt(gg, EnemyType.MERGE_SORT, EnumSet.of(Modifier.FORTIFIED), 0, 510);
             t.resetAbilityCooldown();
@@ -773,7 +778,7 @@ public final class HeadlessTests {
             gg.run(60);
             i++;
         }
-        check(i == 20, "20 abilities tested");
+        check(i == 7, "7 abilities tested (6 heroes + Zethos), got " + i);
     }
 
     private static void mapsTraversable() {
@@ -821,7 +826,7 @@ public final class HeadlessTests {
         Enemy near = spawnAt(g, EnemyType.PRIMITIVE_VARIABLE, null, 1, g.getMap().getRoutes().get(1).getTotalLength() - 100);
         check(sc.enemySpeedMultiplier(near) > sc.enemySpeedMultiplier(far), "gravity speeds up enemies near core");
         g.setGlobalEnemySpeedMultiplier(0);
-        Tower t = forcePlace(g, TowerType.BELLARMINE_STUDENT, buildableNear(g, new Vec(600, 200), 200), 0);
+        Tower t = forcePlace(g, TowerType.BRANDON, buildableNear(g, new Vec(600, 200), 200), 0);
         t.resetAbilityCooldown();
         g.activateAbility(t);
         check(!t.isAbilityReady(), "cooldown started");
@@ -901,7 +906,7 @@ public final class HeadlessTests {
 
     private static void shopLayout() {
         List<lindefense.ui.ShopLayout.Cell> all = lindefense.ui.ShopLayout.allCells();
-        check(all.size() == 20, "ALL view lists 20 towers, got " + all.size());
+        check(all.size() == 18, "ALL view lists the 18 shop towers (no heroes), got " + all.size());
         // spec order, grouped by faction
         lindefense.tower.Faction[] order = lindefense.tower.Faction.values();
         int fi = 0;
@@ -910,10 +915,13 @@ public final class HeadlessTests {
             while (fi < order.length && c.faction != order[fi]) fi++;
             if (fi >= order.length) grouped = false;
         }
-        check(grouped && all.get(0).faction == lindefense.tower.Faction.HERO && all.get(19).faction == lindefense.tower.Faction.TITAN, "grouped in spec faction order");
+        check(grouped && all.get(0).faction == lindefense.tower.Faction.PRIMARY && all.get(17).faction == lindefense.tower.Faction.TITAN, "grouped in faction order");
+        boolean noHero = true;
+        for (lindefense.ui.ShopLayout.Cell c : all) if (c.type.isHero()) noHero = false;
+        check(noHero, "heroes never appear in the tower shop");
         int headers = 0;
         for (lindefense.ui.ShopLayout.Cell c : all) if (c.firstOfFaction) headers++;
-        check(headers == 6, "six faction headers");
+        check(headers == 5, "five faction headers");
         // fits the sidebar without scrolling, no overlaps, inside panel
         boolean inside = true, overlap = false;
         for (int i = 0; i < all.size(); i++) {
@@ -932,11 +940,11 @@ public final class HeadlessTests {
         // faction view
         check(lindefense.ui.ShopLayout.factionCells(lindefense.tower.Faction.TITAN).size() == 7, "Titans tab has 7 cards");
         // affordability flags follow cash
-        check(lindefense.ui.ShopLayout.affordable(650, TowerType.GPT) && !lindefense.ui.ShopLayout.affordable(650, TowerType.BRAD_LINDEMANN), "affordability at $650");
-        check(lindefense.ui.ShopLayout.shortfall(650, TowerType.BRAD_LINDEMANN) == 2000 - 650 && lindefense.ui.ShopLayout.shortfall(650, TowerType.GPT) == 0, "shortfall amounts");
+        check(lindefense.ui.ShopLayout.affordable(650, TowerType.GPT) && !lindefense.ui.ShopLayout.affordable(650, TowerType.COHERE), "affordability at $650");
+        check(lindefense.ui.ShopLayout.shortfall(650, TowerType.COHERE) == 800 - 650 && lindefense.ui.ShopLayout.shortfall(650, TowerType.GPT) == 0, "shortfall amounts");
         int affordableAtStart = 0;
         for (lindefense.ui.ShopLayout.Cell c : all) if (lindefense.ui.ShopLayout.affordable(Game.START_CASH, c.type)) affordableAtStart++;
-        check(affordableAtStart == 13, "13 of 20 towers affordable at start, got " + affordableAtStart);
+        check(affordableAtStart == 13, "13 of 18 shop towers affordable at start, got " + affordableAtStart);
     }
 
     private static void stressLateWaves() {
@@ -950,7 +958,8 @@ public final class HeadlessTests {
             // Build a dense late-game defence near the routes
             TowerType[] types = { TowerType.BRAD_LINDEMANN, TowerType.DEEPSEEK, TowerType.COHERE, TowerType.GEMINI, TowerType.SORA,
                 TowerType.SUNO, TowerType.GLM, TowerType.PERPLEXITY, TowerType.MINIMAX, TowerType.MISTRAL, TowerType.QWEN, TowerType.KIMI,
-                TowerType.GPT, TowerType.CLAUDE, TowerType.LLAMA, TowerType.DALLE, TowerType.GROK, TowerType.COPILOT, TowerType.BELLARMINE_STUDENT_AI, TowerType.BELLARMINE_STUDENT };
+                TowerType.GPT, TowerType.CLAUDE, TowerType.LLAMA, TowerType.DALLE, TowerType.GROK, TowerType.COPILOT, TowerType.ZETHOS, TowerType.BRANDON, TowerType.ROHAN, TowerType.RONIL, TowerType.SHASHANK, TowerType.OWEN };
+            for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);
             int placed = 0;
             for (Path r : g.getMap().getRoutes()) {
                 for (double d = 100; d < r.getTotalLength() && placed < 14; d += 220) {
@@ -998,7 +1007,7 @@ public final class HeadlessTests {
         check(true, "stress completed without exceptions");
     }
 
-    /** All 20 towers fully upgraded, abilities spammed (targeted ones at a track point), late waves: no exceptions, sane state. */
+    /** Every tower and hero fully upgraded, abilities spammed (targeted ones at a track point), late waves: no exceptions, sane state. */
     private static void stressMaxedRoster() {
         long start = System.currentTimeMillis();
         for (int m = 0; m < MapCatalog.MAP_COUNT; m++) {
@@ -1006,11 +1015,12 @@ public final class HeadlessTests {
             g.setInvincible(true);
             g.setGlobalEnemySpeedMultiplier(0.35);
             g.addCash(5_000_000, null);
+            for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);
             int placed = 0;
             TowerType[] all = TowerType.purchasable();
             outer:
             for (Path r : g.getMap().getRoutes()) {
-                for (double d = 80; d < r.getTotalLength(); d += 110) {
+                for (double d = 80; d < r.getTotalLength(); d += 60) {
                     Vec dir = r.directionAt(d);
                     for (int side = -1; side <= 1; side += 2) {
                         Vec p = r.positionAt(d).add(new Vec(-dir.y, dir.x).scale(side * 75));
@@ -1023,7 +1033,7 @@ public final class HeadlessTests {
                     }
                 }
             }
-            check(placed == 20, g.getMap().getName() + " fits the whole roster (" + placed + ")");
+            check(placed == all.length, g.getMap().getName() + " fits the whole roster (" + placed + ")");
             for (int k = 1; k < 94; k++) { g.getWaveManager().startNextWave(); g.getWaveManager().endWave(); }
             int peakDrones = 0, peakZones = 0, peakWalkers = 0;
             for (int wave = 94; wave <= 100; wave++) {

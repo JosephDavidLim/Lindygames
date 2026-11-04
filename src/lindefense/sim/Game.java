@@ -68,6 +68,10 @@ public final class Game {
     private double roundPopValue;
     private double globalEnemySpeedMultiplier = 1.0;
     private boolean invincible;
+    /** Permanently unlocked heroes (Hero Store). In-memory by default; the windowed game installs the persistent one. */
+    private HeroCollection heroes = HeroCollection.inMemory();
+    /** Heroes already deployed this match (each hero may be placed once per match, even after being removed). */
+    private final java.util.EnumSet<TowerType> deployedHeroes = java.util.EnumSet.noneOf(TowerType.class);
 
     public Game(GameMap map, long seed) { this(map, seed, Difficulty.defaultMode()); }
 
@@ -91,7 +95,45 @@ public final class Game {
     public static Game freshCopy(Game old) {
         int idx = lindefense.map.MapCatalog.indexOf(old.getMap());
         if (idx < 0) throw new IllegalArgumentException("map is not in the catalog: " + old.getMap().getName());
-        return new Game(lindefense.map.MapCatalog.create(idx), System.nanoTime(), old.getDifficulty());
+        Game g = new Game(lindefense.map.MapCatalog.create(idx), System.nanoTime(), old.getDifficulty());
+        g.setHeroCollection(old.getHeroCollection());   // unlocks are permanent; deployments reset per match
+        return g;
+    }
+
+    // ---------------- Hero Store ----------------
+    public HeroCollection getHeroCollection() { return heroes; }
+    public void setHeroCollection(HeroCollection c) { heroes = c == null ? HeroCollection.inMemory() : c; }
+    public boolean isHeroUnlocked(TowerType type) { return heroes.isUnlocked(type); }
+    /** True once this hero has been deployed in the current match (it stays true after the hero is removed). */
+    public boolean isHeroDeployed(TowerType type) { return deployedHeroes.contains(type); }
+    /** Called by the tower manager when a hero is placed. */
+    public void markHeroDeployed(TowerType type) { deployedHeroes.add(type); }
+
+    /**
+     * Why the hero cannot be bought in the Hero Store right now ("Already unlocked", "Not enough cash", ...), or null
+     * if {@link #purchaseHero} would succeed.
+     */
+    public String heroPurchaseProblem(TowerType type) {
+        if (type == null || !type.isHero()) return "Not a hero";
+        if (state != State.PLAYING) return "Game over";
+        if (heroes.isUnlocked(type)) return "Already unlocked";
+        if (cash < lindefense.tower.TowerCatalog.get(type).unlockCost) return "Not enough cash";
+        return null;
+    }
+
+    /**
+     * Buys a hero in the Hero Store: deducts its unlock price from the match cash and permanently adds it to the
+     * collection. Never places it. Returns false (and spends nothing) if unaffordable, already owned or not a hero.
+     */
+    public boolean purchaseHero(TowerType type) {
+        if (heroPurchaseProblem(type) != null) { AudioManager.sfx(Sfx.INVALID); return false; }   // AUDIO HOOK
+        int price = lindefense.tower.TowerCatalog.get(type).unlockCost;
+        if (!spendCash(price)) return false;
+        heroes.unlock(type);
+        setBanner(type.displayName.toUpperCase() + " UNLOCKED", type.primaryRgb, 2.5);
+        log("Hero unlocked: " + type.displayName + " for $" + price);
+        AudioManager.sfx(Sfx.CASH);   // AUDIO HOOK
+        return true;
     }
 
     // ---------------- accessors ----------------
@@ -195,7 +237,8 @@ public final class Game {
 
     /**
      * Why a tower cannot be placed at {@code p} ("Cannot build here", "Overlaps another tower",
-     * "Only one Brad Lindemann allowed", "Not enough cash"), or null if it can.
+     * "Unlock Brad Lindemann in the Hero Store", "Brad Lindemann already deployed this match", "Not enough cash"),
+     * or null if it can.
      */
     public String placementProblem(TowerType type, Vec p) { return towerManager.placementProblem(type, p); }
 

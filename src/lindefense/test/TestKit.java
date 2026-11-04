@@ -70,9 +70,10 @@ public final class TestKit {
         throw new IllegalStateException("No buildable point near " + target);
     }
 
-    /** Places a tower with unlimited cash and buys {@code tier} upgrades. */
+    /** Places a tower with unlimited cash and buys {@code tier} upgrades (heroes are unlocked first, in memory). */
     public static Tower forcePlace(Game g, TowerType type, Vec p, int tier) {
         g.addCash(1_000_000, null);
+        if (type.isHero()) g.getHeroCollection().unlock(type);
         Tower t = g.getTowerManager().place(type, p);
         if (t == null) throw new IllegalStateException("Could not place " + type + " at " + p + ": " + g.getTowerManager().placementProblem(type, p));
         for (int i = 0; i < tier; i++) g.getTowerManager().upgrade(t);

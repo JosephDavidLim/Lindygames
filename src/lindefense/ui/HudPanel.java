@@ -58,7 +58,7 @@ public final class HudPanel extends GCompound {
     private final List<UIButton> buttons = new ArrayList<>();
     private final Chip cashChip, livesChip, waveChip, enemyChip;
     private final Cyber.Bar waveBar;
-    private final UIButton pauseBtn, s1, s2, s3, startBtn, autoBtn, menuBtn;
+    private final UIButton pauseBtn, s1, s2, s3, startBtn, autoBtn, menuBtn, heroBtn;
     private final Cyber.Chamfer speedFrame;
 
     // bottom strip
@@ -102,12 +102,12 @@ public final class HudPanel extends GCompound {
         cashChip = new Chip(8, 124, Cyber.Kind.CASH, "credits", Cyber.YELLOW);
         livesChip = new Chip(138, 104, Cyber.Kind.HEART, "integrity", Cyber.RED);
         waveChip = new Chip(248, 124, Cyber.Kind.WAVE, "wave", Cyber.CYAN);
-        enemyChip = new Chip(378, 236, Cyber.Kind.ENEMY, "hostiles", Cyber.MAGENTA);
+        enemyChip = new Chip(378, 198, Cyber.Kind.ENEMY, "hostiles", Cyber.MAGENTA);
         for (Chip c : new Chip[] { cashChip, livesChip, waveChip, enemyChip }) add(c);
         waveBar = new Cyber.Bar(34, CHIP_H - 5, 124 - 34 - 8, 2, 0).colors(Cyber.CYAN, new Color(255, 255, 255, 30), null);
         waveChip.add(waveBar);
 
-        double cx = 626;
+        double cx = 586;
         pauseBtn = btn(cx, 6, 38, 36, "", () -> screen.togglePause());
         pauseBtn.setIcon(Cyber.Kind.PAUSE);
         cx += 46;
@@ -117,16 +117,19 @@ public final class HudPanel extends GCompound {
         s2 = seg(cx + 2 + 38, "2x", 2);
         s3 = seg(cx + 2 + 76, "3x", 3);
         cx += 3 * 38 + 4 + 10;
-        startBtn = btn(cx, 6, 190, 36, "START WAVE 1", () -> screen.startWave());
+        startBtn = btn(cx, 6, 176, 36, "START WAVE 1", () -> screen.startWave());
         startBtn.setPrimary(true);
         startBtn.setIcon(Cyber.Kind.PLAY);
-        cx += 190 + 8;
+        cx += 176 + 8;
         autoBtn = btn(cx, 6, 78, 36, "AUTO", () -> screen.toggleAuto());
         autoBtn.setIcon(Cyber.Kind.AUTO);
         autoBtn.setAccent(Cyber.MAGENTA);
         cx += 78 + 6;
         menuBtn = btn(cx, 6, 72, 36, "MENU", () -> screen.openMenu());
         menuBtn.setIcon(Cyber.Kind.MENU);
+        cx += 72 + 6;
+        heroBtn = btn(cx, 6, Ui.WORLD_W - 6 - cx, 36, "HEROES", () -> screen.toggleHeroStore());
+        heroBtn.setAccent(Cyber.YELLOW);
 
         // ---- bottom strip
         add(Ui.rect(0, Ui.BOTTOM_Y, Ui.WORLD_W, Ui.H - Ui.BOTTOM_Y, new Color(5, 9, 22), new Color(5, 9, 22)));
@@ -214,7 +217,7 @@ public final class HudPanel extends GCompound {
 
         waveChip.set(w + " / " + WaveData.WAVE_COUNT, Cyber.TEXT);
         waveBar.setValue(w / (double) WaveData.WAVE_COUNT);
-        enemyChip.set(alive + " on field" + (toSpawn > 0 ? " • " + toSpawn + " queued" : ""), alive > 0 || toSpawn > 0 ? Cyber.TEXT : Cyber.MUTED);
+        enemyChip.set(alive + " live" + (toSpawn > 0 ? " • " + toSpawn + " queued" : ""), alive > 0 || toSpawn > 0 ? Cyber.TEXT : Cyber.MUTED);
 
         boolean paused = game.isPaused();
         pauseBtn.setSelected(paused);
@@ -235,6 +238,7 @@ public final class HudPanel extends GCompound {
             startBtn.setIcon(null);
         }
         autoBtn.setSelected(game.getWaveManager().isAutoStart());
+        heroBtn.setSelected(screen.isHeroStoreOpen());
 
         updateStrip(w);
         updateToast(dt);

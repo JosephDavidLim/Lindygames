@@ -68,6 +68,7 @@ final class DemoDriver {
                 clickLogical(dc[0], dc[1]);
                 Game g = app.getGame();
                 g.addCash(5000, null);
+                g.setHeroCollection(lindefense.sim.HeroCollection.inMemory()); for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);   // tools never touch saved unlocks
                 placeViaClick(TowerType.GPT, new Vec(380, 300));
                 placeViaClick(TowerType.CLAUDE, new Vec(700, 250));
                 placeViaClick(TowerType.PERPLEXITY, new Vec(460, 520));
@@ -117,9 +118,10 @@ final class DemoDriver {
                 // the shop re-lays itself out (compact / roomy cells) a frame after the toggle: let it settle, then take the
                 // card button's position from the CURRENT layout right before clicking
                 for (int k = 0; k < 4; k++) app.getGameScreen().frame(0.01);
-                TowerType want = ShopLayout.allCells().get(19).type;
+                int lastCell = ShopLayout.allCells().size() - 1;
+                TowerType want = ShopLayout.allCells().get(lastCell).type;
                 List<UIButton> btns = app.getGameScreen().getSidePanel().getButtons();
-                UIButton card = btns.get(Faction.values().length + 2 + 19);   // tabs, ALL, help, then the cards in cell order
+                UIButton card = btns.get(ShopLayout.shopFactions().size() + 2 + lastCell);   // tabs, ALL, help, then the cards in cell order
                 MouseEvent mv = pixelEvent(card.getX() + 5, card.getY() + 5);
                 app.mouseMoved(mv);
                 app.getGameScreen().frame(0.01);

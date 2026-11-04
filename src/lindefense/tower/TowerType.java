@@ -1,19 +1,23 @@
 package lindefense.tower;
 
 /**
- * Identifiers for all 20 playable towers (3 heroes + 17 standard), plus the
- * internal DALL-E Sprite summon. Display names are the AI model / company names
- * as required by the spec; descriptive nicknames are subtitles in the catalog.
+ * Identifiers for every playable unit: 6 Hero Store heroes and 18 standard towers (including Zethos, a Primary
+ * tower), plus the internal DALL-E Sprite summon. Heroes are unlocked in the Hero Store and are never sold in the
+ * regular tower shop. Display names are shown in the UI; descriptive nicknames are subtitles in the catalog.
  */
 public enum TowerType {
-    // Heroes
-    BELLARMINE_STUDENT("Bellarmine Student", Faction.HERO, 0xd8d8d8, 0x1b3a6b),
-    BELLARMINE_STUDENT_AI("Bellarmine Student + AI", Faction.HERO, 0x9fd3ff, 0x1b3a6b),
+    // Heroes (Hero Store only)
     BRAD_LINDEMANN("Brad Lindemann", Faction.HERO, 0xffd700, 0x111111),
+    BRANDON("Brandon", Faction.HERO, 0x9dff3a, 0x16301a),
+    ROHAN("Rohan", Faction.HERO, 0xbff6ff, 0x2563a8),
+    RONIL("Ronil", Faction.HERO, 0xff5a1f, 0x3a1206),
+    SHASHANK("Shashank", Faction.HERO, 0x46e08a, 0x0e2b1d),
+    OWEN("Owen", Faction.HERO, 0xffa13d, 0x2b2f3a),
     // Primary
     GEMINI("Gemini", Faction.PRIMARY, 0x4f7cff, 0x9b5cff),
     CLAUDE("Claude", Faction.PRIMARY, 0xe88a4a, 0xf3d9c4),
     GPT("GPT", Faction.PRIMARY, 0x10a37f, 0xffffff),
+    ZETHOS("Zethos", Faction.PRIMARY, 0x9a6bff, 0x22e6ff),
     // Military
     DEEPSEEK("DeepSeek", Faction.MILITARY, 0x1f3b8f, 0x4d7cff),
     COPILOT("Copilot", Faction.MILITARY, 0x2f7fe0, 0xb8dcff),
@@ -48,7 +52,21 @@ public enum TowerType {
     public boolean isHero() { return faction == Faction.HERO; }
     public boolean isPurchasable() { return this != DALLE_SPRITE; }
 
-    /** The 20 purchasable towers in shop order. */
+    /** The six Hero Store heroes in store order. */
+    public static TowerType[] heroes() {
+        java.util.List<TowerType> l = new java.util.ArrayList<>();
+        for (TowerType t : values()) if (t.isHero()) l.add(t);
+        return l.toArray(new TowerType[0]);
+    }
+
+    /** The regular tower shop's towers (everything purchasable except heroes) in shop order. */
+    public static TowerType[] shopTowers() {
+        java.util.List<TowerType> l = new java.util.ArrayList<>();
+        for (TowerType t : values()) if (t.isPurchasable() && !t.isHero()) l.add(t);
+        return l.toArray(new TowerType[0]);
+    }
+
+    /** Every placeable unit (heroes + shop towers) in catalog order. */
     public static TowerType[] purchasable() {
         TowerType[] all = values();
         TowerType[] out = new TowerType[all.length - 1];

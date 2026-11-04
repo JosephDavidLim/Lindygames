@@ -216,6 +216,14 @@ public class Enemy {
         return true;
     }
 
+    /**
+     * A slow whose magnitude is exact for bosses too (Rohan's 15% / 50% boss slows are specified as delivered values,
+     * not subject to the usual 1/{@value #BOSS_SLOW_DIVISOR} boss rule). Control immunity still applies.
+     */
+    public boolean applyExactSlow(double magnitude, double duration) {
+        return applyStatus(StatusEffect.Kind.SLOW, isBoss() ? magnitude * BOSS_SLOW_DIVISOR : magnitude, duration);
+    }
+
     /** Applies burn (DoT) that credits {@code source} (a Tower) for kills and damage. */
     public void applyBurn(double dps, double duration, Object source) {
         if (applyStatus(StatusEffect.Kind.DOT, dps, duration) && source != null) dotSource = source;

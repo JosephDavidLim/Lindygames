@@ -44,7 +44,8 @@ public class TowerManager {
     /** Returns null if a tower of this type can be placed at p, otherwise the reason it cannot. */
     public String placementProblem(TowerType type, Vec p) {
         TowerDef def = TowerCatalog.get(type);
-        if (type.isHero() && heroPlaced(type)) return "Only one " + type.displayName + " allowed";
+        String hero = heroProblem(type);
+        if (hero != null) return hero;
         if (!game.getMap().isBuildable(p, def.radius)) return "Cannot build here";
         for (Tower t : towers) {
             if (t.isTemporary()) continue;
@@ -55,6 +56,17 @@ public class TowerManager {
     }
 
     public boolean canPlace(TowerType type, Vec p) { return placementProblem(type, p) == null; }
+
+    /**
+     * Hero-only placement rules, independent of position: the hero must be unlocked in the Hero Store and can be
+     * deployed once per match (removing it does not give the deployment back). Null for shop towers.
+     */
+    public String heroProblem(TowerType type) {
+        if (!type.isHero()) return null;
+        if (!game.isHeroUnlocked(type)) return "Unlock " + type.displayName + " in the Hero Store";
+        if (game.isHeroDeployed(type) || heroPlaced(type)) return type.displayName + " already deployed this match";
+        return null;
+    }
 
     /** True if a copy of this hero is currently placed (only one of each hero may exist). */
     public boolean heroPlaced(TowerType type) {
@@ -70,6 +82,7 @@ public class TowerManager {
         if (!game.spendCash(def.baseCost)) return null;
         Tower t = new Tower(def, p);
         towers.add(t);
+        if (type.isHero()) game.markHeroDeployed(type);
         game.getEvents().add(VisualEvent.ability(p, def.radius * 2, type.primaryRgb));
         recomputeAuras();
         t.getBehavior().onPlaced(game, t);
@@ -109,7 +122,7 @@ public class TowerManager {
         t.getBehavior().onRemoved(game, t);
         game.getEffects().removeOwnedBy(t);
         game.addCash(refund, t.getPosition());
-        game.getEvents().add(VisualEvent.text(t.getPosition(), "+$" + refund, 0xffd166));
+        game.getEvents().add(VisualEvent.text(t.getPosition(), t.getType().isHero() ? t.getType().displayName + " dismissed" : "+$" + refund, 0xffd166));
         recomputeAuras();
         return refund;
     }

@@ -30,7 +30,11 @@ import lindefense.tower.AbilityDef;
 import lindefense.tower.Tower;
 import lindefense.tower.TowerStats;
 import lindefense.tower.TowerType;
+import lindefense.tower.behavior.BradLindemannBehavior;
+import lindefense.tower.behavior.BrandonBehavior;
 import lindefense.tower.behavior.GptBehavior;
+import lindefense.tower.behavior.RonilBehavior;
+import lindefense.tower.behavior.ZethosBehavior;
 
 /**
  * In-world renderer for the tower-engine entities that are not plain sprites: {@link TrackZone}s (paint, loop,
@@ -154,6 +158,11 @@ final class WorldFx {
             if (z.isAlive()) drawZone(g, z);
         }
         for (int i = 0; i < sings.size(); i++) drawSingularity(g, sings.get(i));
+        List<Tower> towers = game.getTowerManager().getTowers();
+        for (int i = 0; i < towers.size(); i++) {
+            Tower t = towers.get(i);
+            if (t.isAlive() && !t.isTemporary()) drawHeroGround(g, t);
+        }
     }
 
     private void paintTop(Graphics2D g) {
@@ -176,6 +185,123 @@ final class WorldFx {
             TowerType ty = t.getType();
             if (ty == TowerType.GPT) { drawMoons(g, t); if (GptBehavior.beamActive(t)) drawAstraBeam(g, t); }
             else if (ty == TowerType.COPILOT && t.getStats().has("droneInterval")) drawCopilotDrone(g, t);
+            else if (ty == TowerType.RONIL) drawMeteors(g, t);
+        }
+        drawFrozen(g);
+        drawAbsoluteZero(g, towers);
+    }
+
+    // ------------------------------------------------------------------ Hero Store heroes / Zethos
+    /** Seconds since the tower's ability was activated (large if it was not recently). */
+    private static double sinceAbility(Tower t) {
+        if (t.getAbility() == null) return 99;
+        return t.getAbility().cooldown - t.getAbilityCooldownRemaining();
+    }
+
+    /** Ability auras and buff rings drawn under the enemies. */
+    private void drawHeroGround(Graphics2D g, Tower t) {
+        Vec c = t.getPosition();
+        TowerType ty = t.getType();
+        if (ty == TowerType.BRAD_LINDEMANN && BradLindemannBehavior.isSupreme(t)) {
+            // large command-energy aura: gold disc, rotating chevron ring, crackle spokes
+            double R = 70 + 6 * Math.sin(time * 4);
+            oval(g, c.x, c.y, R, R, col(0xffd700, 40), col(0xfff3a0, 200), 3);
+            ring(g, c.x, c.y, R * 0.7, col(0xfff3a0, 120), 2);
+            if (lod < 2) {
+                for (int i = 0; i < 8; i++) {
+                    double a = time * 1.5 + i * Math.PI / 4;
+                    double x1 = c.x + Math.cos(a) * R * 0.75, y1 = c.y + Math.sin(a) * R * 0.75;
+                    double x2 = c.x + Math.cos(a + 0.12) * R, y2 = c.y + Math.sin(a + 0.12) * R;
+                    seg(g, x1, y1, x2, y2, col(0xffffff, 200), 2.5);
+                }
+            }
+        } else if (ty == TowerType.ZETHOS && ZethosBehavior.isCollapsing(t)) {
+            // reality distortion: warped concentric rings rippling out to the boosted range
+            double R = t.effectiveRange(game);
+            for (int k = 0; k < (lod >= 2 ? 2 : 4); k++) {
+                double ph = ((time * 0.6 + k / 4.0) % 1.0);
+                double rr = R * (0.15 + 0.85 * ph);
+                path.reset();
+                int n = 40;
+                for (int i = 0; i <= n; i++) {
+                    double a = Math.PI * 2 * i / n;
+                    double wob = 1 + 0.06 * Math.sin(a * 6 + time * 5 + k);
+                    double x = c.x + Math.cos(a) * rr * wob, y = c.y + Math.sin(a) * rr * wob;
+                    if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+                }
+                g.setStroke(st(2.5)); g.setColor(col(k % 2 == 0 ? 0x9a6bff : 0x22e6ff, 200 * (1 - ph))); g.draw(path);
+            }
+            oval(g, c.x, c.y, 44, 44, col(0x9a6bff, 50), null, 0);
+        } else if (ty == TowerType.BRANDON && t.hasSelfBuff(BrandonBehavior.OVERDRIVE)) {
+            double R = 30 + 3 * Math.sin(time * 18);
+            ring(g, c.x, c.y, R, col(0x9dff3a, 220), 3);
+            ring(g, c.x, c.y, R + 6, col(0x9dff3a, 90), 2);
+        } else if (ty == TowerType.SHASHANK && sinceAbility(t) < 1.2) {
+            // Resource Optimization burst out to the support radius
+            double f = sinceAbility(t) / 1.2, R = t.getAbility().p("radius") * easeOut(f);
+            oval(g, c.x, c.y, R, R, col(0x46e08a, 60 * (1 - f)), col(0x46e08a, 230 * (1 - f)), 3);
+        }
+        if (t.timedBuffRemaining(TowerType.SHASHANK) > 0) {
+            // data-link buff: green dashed ring under every boosted tower
+            g.setStroke(dashed(2, 5, 4, time * 20)); g.setColor(col(0x46e08a, 200));
+            ell.setFrame(c.x - 26, c.y - 26, 52, 52); g.draw(ell);
+        }
+    }
+
+    /** Ronil's incoming meteors: a growing target reticle and the meteor dropping onto it. */
+    private void drawMeteors(Graphics2D g, Tower t) {
+        List<RonilBehavior.Meteor> ms = RonilBehavior.meteors(t);
+        for (int i = 0; i < ms.size(); i++) {
+            RonilBehavior.Meteor m = ms.get(i);
+            double f = Math.max(0, Math.min(1, (game.getTime() - m.launched) / m.fall));
+            double R = m.radius;
+            oval(g, m.at.x, m.at.y, R * f, R * f * 0.8, col(0xff5a1f, 50 + 60 * f), col(0xffd166, 200), 2);
+            double h = 260 * (1 - f);
+            double mx = m.at.x - h * 0.5, my = m.at.y - h;
+            seg(g, mx - 30, my - 50, mx, my, col(0xff5a1f, 150), 9);
+            seg(g, mx - 18, my - 32, mx, my, col(0xffd166, 200), 5);
+            oval(g, mx, my, 11, 11, new Color(0x4a3530), INK, 2.5);
+            oval(g, mx + 2, my + 1, 5, 5, new Color(0xffb02e), null, 0);
+        }
+    }
+
+    /** Ice crystals over every frozen enemy (Rohan's freezes, Claude's Time-Lock). */
+    private void drawFrozen(Graphics2D g) {
+        List<Enemy> es = game.getEnemyManager().getEnemies();
+        int drawn = 0, max = cap() * 3;
+        for (int i = 0; i < es.size() && drawn < max; i++) {
+            Enemy e = es.get(i);
+            if (!e.isAlive() || e.isStored() || !e.isFrozen()) continue;
+            drawn++;
+            Vec p = e.getPosition();
+            double r = e.getRadius() + 4;
+            oval(g, p.x, p.y, r, r, new Color(191, 246, 255, 90), new Color(143, 230, 255, 230), 2);
+            if (lod < 2) {
+                for (int k = 0; k < 3; k++) {
+                    double a = k * Math.PI * 2 / 3 + 0.4;
+                    double x = p.x + Math.cos(a) * r, y = p.y + Math.sin(a) * r;
+                    path.reset();
+                    path.moveTo(x, y - 5); path.lineTo(x + 3, y); path.lineTo(x, y + 5); path.lineTo(x - 3, y); path.closePath();
+                    g.setColor(Color.WHITE); g.fill(path);
+                    g.setStroke(st(1.2)); g.setColor(new Color(60, 140, 200)); g.draw(path);
+                }
+            }
+        }
+    }
+
+    /** Absolute Zero: a map-wide frost flash for the first second after Rohan casts it. */
+    private void drawAbsoluteZero(Graphics2D g, List<Tower> towers) {
+        for (int i = 0; i < towers.size(); i++) {
+            Tower t = towers.get(i);
+            if (t.getType() != TowerType.ROHAN || !t.isAlive()) continue;
+            double s = sinceAbility(t);
+            if (s >= 1.0) continue;
+            double f = s / 1.0;
+            g.setColor(new Color(191, 246, 255, (int) (90 * (1 - f))));
+            g.fillRect(0, 0, GameMap.WIDTH, GameMap.HEIGHT);
+            Vec c = t.getPosition();
+            double R = 1600 * easeOut(f);
+            ring(g, c.x, c.y, R, new Color(255, 255, 255, (int) (220 * (1 - f))), 6);
         }
     }
 
@@ -574,9 +700,49 @@ final class WorldFx {
             case "buddy": drawBot(g, x, y, 6.5 * pop, d.rgb, false, true); break;
             case "qwen": drawQwenDrone(g, x, y, 8 * pop, d.rgb); break;
             case "clone": drawClone(g, x, y, 9 * pop, d.rgb); break;
+            case "owen": drawQuadDrone(g, x, y, 8 * pop, d.rgb, d); break;
+            case "swarm": drawDeltaDrone(g, x, y, 6.5 * pop, d.rgb, d); break;
             default: drawBot(g, x, y, 7 * pop, d.rgb, false, false);
         }
         g.setComposite(c0);
+    }
+
+    /** Owen's permanent scouts: an X-frame quadcopter with four rotors and a lens that faces its locked target. */
+    private void drawQuadDrone(Graphics2D g, double x, double y, double r, int rgb, Drone d) {
+        oval(g, x + 2, y + r + 6, r, r * 0.35, new Color(0, 0, 0, 55), null, 0);
+        for (int i = 0; i < 4; i++) {
+            double a = Math.PI / 4 + i * Math.PI / 2;
+            double ax = x + Math.cos(a) * r * 1.35, ay = y + Math.sin(a) * r * 1.35;
+            seg(g, x, y, ax, ay, INK, 3.5);
+            seg(g, x, y, ax, ay, new Color(0x3a404d), 2);
+            double spin = Math.abs(Math.cos(time * 30 + i));
+            oval(g, ax, ay, r * 0.6 * (0.3 + 0.7 * spin), r * 0.6, new Color(255, 255, 255, 150), INK, 1.1);
+        }
+        oval(g, x, y, r * 0.75, r * 0.75, mix(rgb, Color.WHITE, 0.1), INK, 2.2);
+        Enemy tg = d.getCurrentTarget();
+        double lx = 0, ly = 0;
+        if (tg != null && tg.isAlive()) { Vec dv = tg.getPosition().sub(d.getPosition()); double L = Math.max(1, dv.length()); lx = dv.x / L * r * 0.3; ly = dv.y / L * r * 0.3; }
+        oval(g, x + lx, y + ly, r * 0.3, r * 0.3, new Color(12, 18, 40), null, 0);
+        oval(g, x + lx, y + ly, r * 0.13, r * 0.13, new Color(0x5fd6ff), null, 0);
+        if (lod == 0) gloss(g, x, y, r);
+    }
+
+    /** Drone Swarm: small cyan delta-wing interceptors with an engine glow. */
+    private void drawDeltaDrone(Graphics2D g, double x, double y, double r, int rgb, Drone d) {
+        double ang = time * -2.2 + seedOf(d);
+        Enemy tg = d.getCurrentTarget();
+        if (tg != null && tg.isAlive()) { Vec dv = tg.getPosition().sub(d.getPosition()); ang = Math.atan2(dv.y, dv.x); }
+        double cs = Math.cos(ang), sn = Math.sin(ang);
+        path.reset();
+        double[][] pts = { { 1.4, 0 }, { -0.9, -1.1 }, { -0.5, 0 }, { -0.9, 1.1 } };
+        for (int i = 0; i < pts.length; i++) {
+            double px = x + (pts[i][0] * cs - pts[i][1] * sn) * r, py = y + (pts[i][0] * sn + pts[i][1] * cs) * r;
+            if (i == 0) path.moveTo(px, py); else path.lineTo(px, py);
+        }
+        path.closePath();
+        oval(g, x - cs * r * 0.7, y - sn * r * 0.7, r * 0.45, r * 0.45, col(rgb, 150 + 80 * Math.sin(time * 20)), null, 0);
+        g.setColor(mix(rgb, Color.WHITE, 0.25)); g.fill(path);
+        g.setStroke(st(2)); g.setColor(INK); g.draw(path);
     }
 
     private java.awt.Composite beginAlpha(Graphics2D g, double a) {

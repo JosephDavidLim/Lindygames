@@ -87,6 +87,7 @@ public class Tower {
         this.lifetime = lifetime;
         this.owner = owner;
         this.behavior = Behaviors.of(def.type);
+        this.targeting = def.defaultTargeting;
         // Abilities are usable from placement and start at 50% cooldown (spec 3.0).
         this.abilityCooldown = def.ability == null ? 0 : def.ability.cooldown * 0.5;
     }
@@ -100,7 +101,7 @@ public class Tower {
     public Vec getPosition() { return position; }
     public int getTier() { return tier; }
     public int getMaxTier() { return def.upgrades.length; }
-    /** True when all three upgrades are bought. */
+    /** True when every upgrade is bought (heroes, which have none, always are). */
     public boolean isSuperclass() { return tier >= def.upgrades.length; }
     public boolean isMaxed() { return tier >= def.upgrades.length; }
     public TowerStats getStats() { return stats; }
@@ -205,8 +206,19 @@ public class Tower {
         selfBuffs.add(new SelfBuff(key, rateMult, projectileSpeedMult, duration));
     }
     public boolean hasSelfBuff(String key) {
-        for (SelfBuff b : selfBuffs) if (b.key.equals(key)) return true;
+        for (int i = 0, n = selfBuffs.size(); i < n; i++) if (selfBuffs.get(i).key.equals(key)) return true;
         return false;
+    }
+    /** Seconds left on a self buff (0 if not active). */
+    public double selfBuffRemaining(String key) {
+        for (int i = 0, n = selfBuffs.size(); i < n; i++) if (selfBuffs.get(i).key.equals(key)) return selfBuffs.get(i).remaining;
+        return 0;
+    }
+    /** Seconds left on the longest timed buff granted by a source tower type (0 if none). */
+    public double timedBuffRemaining(TowerType source) {
+        double best = 0;
+        for (int i = 0, n = timedBuffs.size(); i < n; i++) if (timedBuffs.get(i).source == source) best = Math.max(best, timedBuffs.get(i).remaining);
+        return best;
     }
     /** Product of self rate multipliers (Caffeine Rush x2, Overclock x3). */
     public double selfRateMult() { double m = 1; for (int i = 0, n = selfBuffs.size(); i < n; i++) m *= selfBuffs.get(i).rateMult; return m; }
@@ -236,6 +248,11 @@ public class Tower {
      * Perplexity aura, or granted map-wide while a Perplexity U1+ exists.
      */
     public boolean canSeeCamo() { return stats.seesCamo || grantedDetection; }
+    /**
+     * Total attack-rate multiplier on top of the base stats (buffs, self buffs, map, global, surveillance): what
+     * {@link #effectiveRate} applies to {@code stats.rate}. Drones that inherit their owner's speed use it.
+     */
+    public double rateMultiplier(Game game) { return stats.rate <= 0 ? 1 : effectiveRate(game) / stats.rate; }
     /** Attack-speed fraction from buffs (capped at +100%). */
     public double getAuraRateBonus() { return buffTotal(BuffStat.RATE); }
     /** Flat damage from buffs (capped at +5). */
@@ -290,7 +307,7 @@ public class Tower {
 
     // ---------------- effective numbers ----------------
     public double effectiveRange(Game game) {
-        double r = stats.range * (1 + buffTotal(BuffStat.RANGE)) * mapRange();
+        double r = (stats.range + behavior.flatRangeBonus(this)) * (1 + buffTotal(BuffStat.RANGE)) * mapRange();
         if (game != null) r *= game.getMap().towerRangeMultiplier(game, this);
         if (isSurveilled()) r *= 0.7;
         return r;

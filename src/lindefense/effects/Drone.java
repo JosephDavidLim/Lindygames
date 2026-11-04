@@ -37,8 +37,18 @@ public final class Drone {
     /** Seconds of life (&le; 0 = lives as long as the owner). */
     public double lifetime;
     public int rgb = 0xffffff;
-    /** Free-form label for the renderer / tests ("companion", "buddy", "qwen", "clone"). */
+    /** Free-form label for the renderer / tests ("owen", "swarm", "qwen", "clone"). */
     public String kind = "drone";
+    /** Measure range from the owner tower instead of the drone (Owen: "range 50 units" is Owen's range). */
+    public boolean rangeFromOwner;
+    /** Scale the fire rate by the owner's attack-speed multiplier (auras, timed buffs, surveillance). */
+    public boolean inheritOwnerRate;
+    /**
+     * Keep shooting the current target until it dies or leaves range, then pick a new one, preferring enemies no
+     * sibling drone (same owner and kind) is already locked on (Owen's independent drones).
+     */
+    public boolean stickyTarget;
+    private Enemy current;
 
     // orbit
     public double orbitRadius = 40;
@@ -117,13 +127,40 @@ public final class Drone {
         if (cooldown > 0) return;
         TowerStats s = effectiveStats();
         int want = Math.max(s.targets, s.kind == lindefense.tower.AttackKind.INSTANT ? s.projectilesPerShot : 1);
-        List<Enemy> targets = game.getCombat().acquireTargetsFrom(pos, s.range, detection, true, targeting, Math.max(1, want), null);
+        Vec from = rangeFromOwner ? owner.getPosition() : pos;
+        List<Enemy> targets;
+        if (stickyTarget) {
+            targets = new java.util.ArrayList<>(1);
+            Enemy t = stickyPick(game, s, from);
+            if (t != null) targets.add(t);
+        } else {
+            targets = game.getCombat().acquireTargetsFrom(from, s.range, detection, true, targeting, Math.max(1, want), null);
+        }
         if (targets.isEmpty()) return;
         AttackContext c = new AttackContext(owner, s, targets);
         c.damageMult = owner.damageMultiplier(game);
         c.pierce = Math.max(1, s.pierce);
         c.bounces = s.bounces; c.clones = s.clones; c.splash = s.splashRadius; c.speed = s.projectileSpeed;
         game.getCombat().executeAttack(c, pos, detection, false);
-        cooldown = 1.0 / Math.max(0.05, s.rate);
+        double rate = s.rate * (inheritOwnerRate ? owner.rateMultiplier(game) : 1);
+        cooldown = 1.0 / Math.max(0.05, rate);
+    }
+
+    /** The enemy this drone is locked on (sticky drones only; null when idle). */
+    public Enemy getCurrentTarget() { return current; }
+
+    private Enemy stickyPick(Game game, TowerStats s, Vec from) {
+        if (current != null && current.isAlive() && !current.isStored() && current.isTargetableBy(detection)
+            && from.withinDist(current.getPosition(), s.range + current.getRadius())) return current;
+        current = null;
+        List<Enemy> cands = game.getCombat().acquireTargetsFrom(from, s.range, detection, true, targeting, 12, null);
+        if (cands.isEmpty()) return null;
+        java.util.Set<Enemy> taken = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Drone d : game.getEffects().getDrones()) {
+            if (d != this && d.owner == owner && d.isAlive() && d.current != null) taken.add(d.current);
+        }
+        for (Enemy e : cands) if (!taken.contains(e)) { current = e; return e; }
+        current = cands.get(0);
+        return current;
     }
 }

@@ -98,6 +98,9 @@ public abstract class TowerBehavior {
         if (s.auraSurveillanceImmunity) dst.grantSurveillanceImmunity();
     }
 
+    /** Flat range added before range multipliers (Zethos Reality Collapse +15 map units). */
+    public double flatRangeBonus(Tower t) { return 0; }
+
     /** Whether the tower may select Densest Cluster targeting (Grok U2+). */
     public boolean allowsDensestCluster(Tower t) { return false; }
 

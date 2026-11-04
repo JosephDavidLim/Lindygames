@@ -5,7 +5,8 @@ import lindefense.tower.TowerType;
 
 /**
  * Brad Lindemann, the Commander: a black-and-gold command mech with fringed
- * epaulettes, rank stars and a howitzer. Captain adds a muzzle brake and
+ * epaulettes, rank stars and a howitzer charged with crackling command energy (as a Hero Store hero he is drawn at
+ * his stage-3 General platform). Captain adds a muzzle brake and
  * second star, Colonel twin cannons and a radar, General triple cannons and a
  * banner, and the Supreme Commander superclass is a towering four-cannon
  * siege platform under a crown and standard, built to read as the strongest
@@ -78,6 +79,10 @@ public final class BradArt extends TowerArt {
             tu.spinner(Art.star(0, 0, hw * 2.2, hw * 1.4, 6, 0), len * 0.75, 0, Art.GOLD_LIGHT);
             tu.setSpinSpeed(120);
         }
+        // command-energy charge in the muzzles and tesla coils on the mantlet
+        tu.plain(Art.circle(len + r * 0.12, 0, hw * 1.5, 12), Art.alpha(Art.rgb(0xfff3a0), 210));
+        tu.plain(Art.circle(len + r * 0.12, 0, hw * 0.7, 10), Color.WHITE);
+        tu.plain(Art.bolt(-r * 0.2, len * 0.8, hw * 0.9, r * 0.03), Art.alpha(Art.rgb(0xfff3a0), 230));
         tu.setFlash(tu.plain(Art.star(len + r * 0.5, 0, r * 0.45, r * 0.18, 8, 0), Art.alpha(Art.rgb(0xffe08a), 240)));
         poly(Art.regular(0, 0, r * 0.26, 8, 22.5), Art.GOLD);
         plain(Art.star(0, 0, r * 0.14, r * 0.06, 5, 0), BLACK);
@@ -85,6 +90,7 @@ public final class BradArt extends TowerArt {
             crown(0, top - r * 0.2, r * 0.32, 7);
             pulsingGlow(0, 0, r * 1.2, Art.GOLD, 40, 30, 1.2);
         }
+        pulsingGlow(0, 0, r * 1.05, Art.rgb(0xfff3a0), 26, 22, 1.6);
         sparkle(-w * 0.3, top + r * 0.1, r * 0.1);
     }
 }

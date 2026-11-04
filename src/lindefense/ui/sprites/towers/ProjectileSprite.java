@@ -21,7 +21,9 @@ public class ProjectileSprite extends GCompound implements Animated {
     private static final long serialVersionUID = 1L;
 
     /** Visual families; {@link ProjectileSprites} picks one per tower type. */
-    public enum Style { LANCE, TOKEN, SLUG, SNIPPET, PAINT, NOTE, BOLT, PIN, BLADE, WAD, GALE, ORB, ROUND, BOOK, SHELL, SPARK, PULSE, DOT }
+    public enum Style { LANCE, TOKEN, SLUG, SNIPPET, PAINT, NOTE, BOLT, PIN, BLADE, WAD, GALE, ORB, ROUND, BOOK, SHELL, SPARK, PULSE, DOT,
+        /** Hero Store and Zethos families. */
+        COMMAND, VOLLEY, CRYO, METEOR, DATA, DRONE, QUANTUM }
 
     private final List<GPolygon> oriented = new ArrayList<>(4);
     private final List<GPolygon> spinners = new ArrayList<>(3);
@@ -232,6 +234,73 @@ public class ProjectileSprite extends GCompound implements Animated {
                 spinPart(Art.star(0, 0, rad, rad * 0.4, 4, 0), c, true);
                 spinPart(Art.circle(0, 0, rad * 0.3, 8), Color.WHITE, false);
                 spinSpeed = 420;
+                break;
+            }
+            case COMMAND: {   // Brad: a big command-energy sphere wrapped in crackling arcs
+                double rad = k * 8;
+                plainPart(Art.wedge(0, -rad * 2.6, rad * 0.9, 0), Art.alpha(Art.rgb(0xfff3a0), 90));
+                part(Art.circle(0, 0, rad, 16), c);
+                plainPart(Art.circle(0, 0, rad * 0.6, 12), Art.rgb(0xfff3a0));
+                plainPart(Art.circle(0, 0, rad * 0.3, 10), Color.WHITE);
+                spinPart(Art.star(0, 0, rad * 1.5, rad * 0.9, 5, 0), Art.alpha(Art.rgb(0xfff3a0), 150), false);
+                spinSpeed = 380;
+                break;
+            }
+            case VOLLEY: {   // Brandon: slim lime tracer bolt
+                double len = k * 15, hw = k * 1.2;
+                plainPart(Art.rect(-len * 1.5, -hw * 0.5, len * 1.2, hw), Art.alpha(c, 110));
+                part(new double[] { -len / 2, -hw, len / 2 - hw, -hw, len / 2 + hw * 2, 0, len / 2 - hw, hw, -len / 2, hw }, c);
+                plainPart(Art.rect(-len * 0.35, -hw * 0.35, len * 0.7, hw * 0.7), Color.WHITE);
+                break;
+            }
+            case CRYO: {   // Rohan: tumbling ice crystal with a frost trail
+                double rad = k * 6.5;
+                plainPart(Art.wedge(0, -rad * 2.4, rad * 0.7, 0), Art.alpha(Art.rgb(0x8fe6ff), 100));
+                spinPart(Art.star(0, 0, rad, rad * 0.45, 6, 0), Art.rgb(0x8fe6ff), true);
+                spinPart(Art.star(0, 0, rad * 0.55, rad * 0.25, 6, 30), Color.WHITE, false);
+                spinSpeed = 260;
+                break;
+            }
+            case METEOR: {   // Ronil: molten rock with a fiery tail
+                double rad = k * 7.5;
+                plainPart(Art.wedge(0, -rad * 3.2, rad * 1.1, 0), Art.alpha(Art.rgb(0xff5a1f), 120));
+                plainPart(Art.wedge(0, -rad * 2.2, rad * 0.7, 0), Art.alpha(Art.rgb(0xffd166), 160));
+                double[] v = new double[16];
+                double[] bumps = { 1, 0.82, 1.08, 0.9, 1, 0.78, 1.04, 0.86 };
+                for (int i = 0; i < 8; i++) { double a = i * Math.PI / 4; v[2 * i] = Math.cos(a) * rad * bumps[i]; v[2 * i + 1] = Math.sin(a) * rad * bumps[i]; }
+                spinPart(v, Art.rgb(0x4a3530), true);
+                spinPart(Art.circle(rad * 0.2, rad * 0.1, rad * 0.35, 8), Art.rgb(0xffb02e), false);
+                spinPart(Art.circle(-rad * 0.35, -rad * 0.3, rad * 0.2, 6), Art.rgb(0xff5a1f), false);
+                spinSpeed = 200;
+                break;
+            }
+            case DATA: {   // Shashank: a green data packet trailing bits
+                double w = k * 9, h = k * 6;
+                plainPart(Art.rect(-w * 1.6, -h * 0.15, w * 0.3, h * 0.3), Art.alpha(c, 160));
+                plainPart(Art.rect(-w * 1.15, -h * 0.15, w * 0.3, h * 0.3), Art.alpha(c, 200));
+                part(Art.regular(0, 0, w * 0.6, 6, 0), c);
+                plainPart(Art.rect(-w * 0.25, -h * 0.25, w * 0.15, h * 0.5), Color.WHITE);
+                plainPart(Art.rect(w * 0.05, -h * 0.25, w * 0.15, h * 0.5), Color.WHITE);
+                break;
+            }
+            case DRONE: {   // Owen's drones: short cyan pulse dart
+                double len = k * 10, hw = k * 1.6;
+                plainPart(Art.wedge(-len * 0.3, -len * 1.4, hw, 0), Art.alpha(Art.rgb(0x5fd6ff), 120));
+                part(Art.wedge(-len / 2, len / 2, hw * 1.4, 0), Art.rgb(0x5fd6ff));
+                plainPart(Art.circle(len * 0.1, 0, hw * 0.6, 6), Color.WHITE);
+                break;
+            }
+            case QUANTUM: {   // Zethos: a violet-cyan quantum diamond with orbiting probability nodes
+                double rad = k * (5.5 + 0.6 * tier);
+                plainPart(Art.wedge(0, -rad * (2.4 + 0.5 * tier), rad * 0.75, 0), Art.alpha(c2, 90 + 25 * tier));
+                part(new double[] { -rad, 0, 0, -rad * 0.7, rad * 1.3, 0, 0, rad * 0.7 }, c);
+                plainPart(new double[] { -rad * 0.4, 0, 0, -rad * 0.3, rad * 0.6, 0, 0, rad * 0.3 }, c2);
+                plainPart(Art.circle(0, 0, rad * 0.18, 6), Color.WHITE);
+                if (tier >= 2) {
+                    spinPart(Art.circle(rad * 1.5, 0, rad * 0.25, 8), c2, false);
+                    spinPart(Art.circle(-rad * 1.5, 0, rad * 0.25, 8), tier >= 4 ? Art.GOLD : c, false);
+                    spinSpeed = 600;
+                }
                 break;
             }
             case DOT: default: {

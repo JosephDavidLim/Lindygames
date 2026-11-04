@@ -1,78 +1,114 @@
 package lindefense.tower.data;
 
+import static lindefense.tower.TowerStats.u;
+
 import java.util.Arrays;
 import java.util.List;
 import lindefense.combat.DamageType;
 import lindefense.tower.AttackKind;
+import lindefense.tower.Targeting;
 import lindefense.tower.TowerDef;
 import lindefense.tower.TowerType;
 import lindefense.tower.data.TowerBuilder.AbilityBuilder;
 
 /**
- * Spec 3.1 HEROES: Bellarmine Student, Bellarmine Student + AI, Brad Lindemann. Owner: agent B1.
- * Distances px, intervals seconds. Parameters (read with {@code stats.p("name")}):
+ * HERO STORE: Brad Lindemann, Brandon, Rohan, Ronil, Shashank, Owen. Heroes are bought once in the Hero Store
+ * ({@code unlockCost}, a permanent unlock) and then deployed for free, once per match. They have no upgrade path.
+ *
+ * <p>Distances are written in the specification's map units with {@link lindefense.tower.TowerStats#u} (1 unit =
+ * {@value lindefense.tower.TowerStats#MAP_UNIT} px); intervals are seconds between attacks. Mechanic parameters
+ * (read with {@code stats.p("name")} / {@code ability.p("name")}):</p>
  * <ul>
- *   <li>Student + AI: {@code prioritizeCamoRegrow}; U3 companion {@code companionRange, companionInterval,
- *       companionDamage, companionPierce, companionOrbit, markPct, markDuration}.</li>
- *   <li>Brad: U1 {@code fieldSlow}/{@code fieldMarkFlat} are typed field stats; U3 {@code barrageInterval,
- *       barrageShells, barrageDamage, barrageSplash, barrageMoabMult}.</li>
+ *   <li>Brad: {@code chainDamage}; chain count and reach are the typed {@code chainHops} / {@code chainRange}. Supreme
+ *       Command: {@code duration, damageMult, splashMult, chainTargets, chainDamage}.</li>
+ *   <li>Brandon: Overdrive {@code duration, rateMult, damageMult, pierce}.</li>
+ *   <li>Rohan: {@code slowPct, slowDuration, freezeChance, freezeDuration, bossSlowPct}; Absolute Zero
+ *       {@code freezeDuration, damage, bossSlowPct, bossSlowDuration}.</li>
+ *   <li>Ronil: Meteor Shower {@code duration, meteors, damage, splash, fallTime}.</li>
+ *   <li>Shashank: the vulnerability debuff is the hit's {@code markBonus/markDuration}; Resource Optimization
+ *       {@code cash, duration, rateBonus, radius}.</li>
+ *   <li>Owen: {@code drones, droneSpeed, droneOrbit}; drone damage / interval / range are the typed attack stats.
+ *       Drone Swarm {@code drones, duration, damage, interval}.</li>
  * </ul>
+ * Numbers the specification leaves open (kept here so they are easy to retune): Rohan's projectile speed 50 units/s,
+ * Shashank's 55 units/s, the meteor fall time (0.5 s) and the swarm drones' range and projectile speed (Owen's).
  */
 public final class HeroTowers {
     private HeroTowers() { }
 
-    public static List<TowerDef> all() { return Arrays.asList(student(), studentAi(), brad()); }
-
-    static TowerDef student() {
-        return TowerBuilder.of(TowerType.BELLARMINE_STUDENT, "Melee-Ranged Hybrid", 550)
-            .description("Hero. Throws pencils and small books; later heavy textbooks with splash, and an aura that boosts nearby towers. Blunt damage, no camo detection.")
-            .tiers("Backpack Toss", "Textbook Smash", "Calculator Shield", "All-Nighter Aura")
-            .attack(AttackKind.PROJECTILE, DamageType.BLUNT, 160, 0.9, 1, 2)
-            .base(s -> { s.projectileSpeed = 500; })
-            .upgrade(350, "Textbook Smash", "Heavy textbooks: splash radius 40, damage 2, pierce 8.",
-                s -> { s.splashRadius = 40; s.hit.damage = 2; s.pierce = 8; })
-            .upgrade(600, "Calculator Shield", "Aura radius 140 gives nearby towers +1 pierce; own pierce +2.",
-                s -> { s.auraRange = 140; s.auraPierce = 1; s.pierce += 2; })
-            .upgrade(1100, "All-Nighter Aura", "Aura also gives +15% attack speed and +1 damage; own interval 0.6.",
-                s -> { s.auraRate = 0.15; s.auraDamage = 1; s.interval(0.6); })
-            .ability(AbilityBuilder.of("Caffeine Rush", 45, "Doubles own attack speed and projectile speed for 10 s.")
-                .p("duration", 10).p("rateMult", 2).p("projectileSpeedMult", 2))
-            .build();
-    }
-
-    static TowerDef studentAi() {
-        return TowerBuilder.of(TowerType.BELLARMINE_STUDENT_AI, "Autonomous Hybrid", 800)
-            .description("Hero. Homing laser-etched notes that prioritise Camo and Regrow enemies and ignore line-of-sight blockers. Built-in camo detection.")
-            .tiers("Copilot Assist", "Automated Essay", "Neural Backpack", "Autonomous Scholar")
-            .attack(AttackKind.PROJECTILE, DamageType.ENERGY, 200, 0.7, 1, 2)
-            .base(s -> { s.projectileSpeed = 600; s.seesCamo = true; s.ignoresLos = true; s.set("prioritizeCamoRegrow", 1); })
-            .upgrade(500, "Automated Essay", "Each attack fires 3 homing notes at 3 different targets.",
-                s -> { s.targets = 3; })
-            .upgrade(850, "Neural Backpack", "Pierce +3; hits apply ARMOR CRACK for 3 s.",
-                s -> { s.pierce += 3; s.hit.armorBreak = 1; s.hit.armorBreakDuration = 3; })
-            .upgrade(1500, "Autonomous Scholar", "Orbiting AI companion attacks on its own (range 220, interval 0.4, damage 2, pierce 3, camo); its hits MARK enemies +25% damage taken for 4 s.",
-                s -> { s.set("companionRange", 220).set("companionInterval", 0.4).set("companionDamage", 2).set("companionPierce", 3)
-                    .set("companionOrbit", 45).set("markPct", 0.25).set("markDuration", 4); })
-            .ability(AbilityBuilder.of("Prompt Overclock", 60, "Spawns 2 study-buddy drones for 15 s (interval 0.2, damage 3, x3 vs Lead-type and Ceramic-type).")
-                .p("drones", 2).p("duration", 15).p("interval", 0.2).p("damage", 3).p("armoredMult", 3).p("range", 200).p("orbit", 40))
-            .build();
-    }
+    public static List<TowerDef> all() { return Arrays.asList(brad(), brandon(), rohan(), ronil(), shashank(), owen()); }
 
     static TowerDef brad() {
-        return TowerBuilder.of(TowerType.BRAD_LINDEMANN, "Commander Support & Heavy Artillery", 2000)
-            .description("Hero. The strongest and most expensive unit in the game: a megaphone aura boosts nearby towers while shockwave shells pound the track. No camo detection.")
-            .tiers("Megaphone Shouted Orders", "Discipline Field", "Tactical Megaphone", "Supreme Commander Strike")
-            .attack(AttackKind.PROJECTILE, DamageType.EXPLOSIVE, 260, 1.4, 3, 15)
-            .base(s -> { s.splashRadius = 60; s.projectileSpeed = 450; s.hit.flatVsBoss = 2; s.auraRange = 180; s.auraRate = 0.10; })
-            .upgrade(1500, "Discipline Field", "Non-boss enemies in range are SLOWED 30% and MARKED (+1 damage taken).",
-                s -> { s.auraEnemySlow = 0.30; s.fieldMarkFlat = 1; s.fieldAffectsBosses = false; })
-            .upgrade(3000, "Tactical Megaphone", "Aura becomes +25% attack speed and +2 pierce.",
-                s -> { s.auraRate = 0.25; s.auraPierce = 2; })
-            .upgrade(6000, "Supreme Commander Strike", "Every 6 s a 5-shell barrage hits anywhere on the track, aimed at the boss if present, otherwise the densest cluster (damage 25 each, splash 90, x3 vs MOAB-class). Aura becomes +35% attack speed and +1 damage.",
-                s -> { s.auraRate = 0.35; s.auraDamage = 1;
-                    s.set("barrageInterval", 6).set("barrageShells", 5).set("barrageDamage", 25).set("barrageSplash", 90).set("barrageMoabMult", 3); })
-            .ability(AbilityBuilder.of("Inspiration Wave", 90, "Resets ability cooldowns of all towers in range (not Brad's own) and gives them +50% pierce for 10 s.")
-                .p("pierceBonusPct", 0.5).p("duration", 10))
+        return TowerBuilder.of(TowerType.BRAD_LINDEMANN, "Legendary Area-Damage Commander", 0)
+            .unlockCost(1800).targeting(Targeting.STRONGEST)
+            .description("Hero. Massive explosions and chaining energy: a command-energy shell at the strongest enemy explodes for full damage in 18 units, then lightning chains through up to 5 more enemies. Slow attack interval. No camo detection.")
+            .tiers("Battlefield Commander")
+            .attack(AttackKind.PROJECTILE, DamageType.EXPLOSIVE, u(55), 2.0, 35, 1)
+            .base(s -> { s.splashRadius = u(18); s.projectileSpeed = u(45); s.chainHops = 5; s.chainRange = u(15);
+                s.set("chainDamage", 25); })
+            .ability(AbilityBuilder.of("Supreme Command", 45, "For 12 s: double primary damage, splash radius 18 -> 27 units, up to 10 chain targets at 35 damage each.")
+                .p("duration", 12).p("damageMult", 2.0).p("splashMult", 1.5).p("chainTargets", 10).p("chainDamage", 35))
+            .build();
+    }
+
+    static TowerDef brandon() {
+        return TowerBuilder.of(TowerType.BRANDON, "Rapid-Fire Single-Target Specialist", 0)
+            .unlockCost(1100).targeting(Targeting.STRONGEST)
+            .description("Hero. Extremely fast precision bolts that fly in a straight line through up to 3 enemies. Great against fast enemies and medium groups; low damage per bolt. No camo detection.")
+            .tiers("Precision Gunner")
+            .attack(AttackKind.PROJECTILE, DamageType.ENERGY, u(42), 0.30, 12, 3)
+            .base(s -> { s.projectileSpeed = u(65); })
+            .ability(AbilityBuilder.of("Overdrive", 35, "For 10 s: fires twice as fast (interval halved), +50% damage, pierce 5.")
+                .p("duration", 10).p("rateMult", 2.0).p("damageMult", 1.5).p("pierce", 5))
+            .build();
+    }
+
+    static TowerDef rohan() {
+        return TowerBuilder.of(TowerType.ROHAN, "Defensive Crowd-Control Specialist", 0)
+            .unlockCost(1300)
+            .description("Hero. Icy blasts damage everything within 12 units, slow by 40% for 3 s and may freeze each enemy for 1 s (20%). Bosses cannot be frozen and take a 15% slow instead. Low direct damage. No camo detection.")
+            .tiers("Cryo Warden")
+            .attack(AttackKind.PROJECTILE, DamageType.ENERGY, u(40), 1.5, 18, 1)
+            .base(s -> { s.splashRadius = u(12); s.projectileSpeed = u(50);
+                s.set("slowPct", 0.40).set("slowDuration", 3).set("freezeChance", 0.20).set("freezeDuration", 1).set("bossSlowPct", 0.15); })
+            .ability(AbilityBuilder.of("Absolute Zero", 50, "Deals 50 damage to every enemy on the map and freezes all non-boss enemies for 4 s. Bosses are slowed 50% for 4 s instead.")
+                .p("freezeDuration", 4).p("damage", 50).p("bossSlowPct", 0.50).p("bossSlowDuration", 4))
+            .build();
+    }
+
+    static TowerDef ronil() {
+        return TowerBuilder.of(TowerType.RONIL, "Explosive Artillery Specialist", 0)
+            .unlockCost(1500)
+            .description("Hero. Long-range meteor strikes deal full damage to every enemy within 16 units. Slow firing speed; excels against armoured groups and large enemies. No camo detection.")
+            .tiers("Meteor Caller")
+            .attack(AttackKind.PROJECTILE, DamageType.EXPLOSIVE, u(75), 3.0, 75, 1)
+            .base(s -> { s.splashRadius = u(16); s.projectileSpeed = u(35); })
+            .ability(AbilityBuilder.of("Meteor Shower", 55, "Calls 8 meteors over 6 s, each at a different spot with enemies anywhere on the map: 100 damage within 14 units.")
+                .p("duration", 6).p("meteors", 8).p("damage", 100).p("splash", u(14)).p("fallTime", 0.5))
+            .build();
+    }
+
+    static TowerDef shashank() {
+        return TowerBuilder.of(TowerType.SHASHANK, "Economic Support and Tactical Debuffer", 0)
+            .unlockCost(1000)
+            .description("Hero. Data-draining shots hit up to 2 enemies and make them take +10% damage from every tower and hero for 4 s (refreshes, never stacks). Low direct damage. No camo detection.")
+            .tiers("Data Strategist")
+            .attack(AttackKind.PROJECTILE, DamageType.ENERGY, u(48), 1.2, 15, 2)
+            .base(s -> { s.projectileSpeed = u(55); s.hit.markBonus = 0.10; s.hit.markDuration = 4; })
+            .ability(AbilityBuilder.of("Resource Optimization", 60, "Immediately generates $500 and gives every tower and hero within 35 units +20% attack speed for 12 s (does not stack).")
+                .p("cash", 500).p("duration", 12).p("rateBonus", 0.20).p("radius", u(35)))
+            .build();
+    }
+
+    static TowerDef owen() {
+        return TowerBuilder.of(TowerType.OWEN, "Summoner and Multi-Target Specialist", 0)
+            .unlockCost(1400)
+            .description("Hero. Deploys 3 autonomous drones that each pick, shoot and switch targets on their own (20 damage every 1.5 s). Relies on drone uptime. No camo detection.")
+            .tiers("Drone Operator")
+            .attack(AttackKind.CUSTOM, DamageType.ENERGY, u(50), 1.5, 20, 1)
+            .base(s -> { s.projectileSpeed = u(55); s.set("drones", 3).set("droneSpeed", u(55)).set("droneOrbit", 30); })
+            .ability(AbilityBuilder.of("Drone Swarm", 50, "Summons 5 extra drones for 15 s, each dealing 25 damage once per second. The original 3 drones stay.")
+                .p("drones", 5).p("duration", 15).p("damage", 25).p("interval", 1.0))
             .build();
     }
 }

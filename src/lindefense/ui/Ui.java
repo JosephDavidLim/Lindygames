@@ -97,7 +97,10 @@ public final class Ui {
 
     public static String fmt(double v) {
         if (Math.abs(v - Math.rint(v)) < 1e-9) return String.valueOf((long) Math.rint(v));
-        return String.format("%.1f", v);
+        // up to two decimals, trailing zeros trimmed (0.85 s and 0.25 s intervals must not round to 0.9 / 0.3)
+        String s = String.format(java.util.Locale.ROOT, "%.2f", v);
+        while (s.endsWith("0")) s = s.substring(0, s.length() - 1);
+        return s.endsWith(".") ? s.substring(0, s.length() - 1) : s;
     }
 
     /**

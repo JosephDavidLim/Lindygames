@@ -37,6 +37,9 @@ public final class GameScreen extends GCompound {
     private double glitchTimer;
     private double dockShown;
     private boolean helpShown;
+    private boolean heroStoreShown;
+    private String heroStoreKey = "";
+    private String heroStoreNotice;
 
     private TowerType placing;
     private Tower selectedTower;
@@ -53,7 +56,12 @@ public final class GameScreen extends GCompound {
     private enum Confirm { NONE, RESTART, QUIT }
     private Confirm menuConfirm = Confirm.NONE;
 
-    public GameScreen(LindefenseProgram app, Game game) {
+    private TutorialGuide tutorial;
+
+    public GameScreen(LindefenseProgram app, Game game) { this(app, game, false); }
+
+    /** {@code tutorial} adds the guided-tutorial card (see {@link TutorialScript}). */
+    public GameScreen(LindefenseProgram app, Game game, boolean tutorial) {
         this.app = app;
         this.game = game;
         add(Ui.rect(0, 0, Ui.W, Ui.H, Ui.BG, Ui.BG));
@@ -69,8 +77,12 @@ public final class GameScreen extends GCompound {
         add(abilities);
         add(side);
         buildBrackets();
+        if (tutorial) { this.tutorial = new TutorialGuide(new TutorialScript(game)); add(this.tutorial); }
         add(overlay);
     }
+
+    /** The running tutorial's script, or null outside the tutorial. */
+    public TutorialScript getTutorial() { return tutorial == null ? null : tutorial.getScript(); }
 
     /** Faint grid behind the (possibly shrunken) playfield, visible in the margins while the boss dock is open. */
     private void buildBackdrop() {
@@ -148,7 +160,49 @@ public final class GameScreen extends GCompound {
     private void resumeGame() { menuConfirm = Confirm.NONE; game.setPaused(false); buildOverlay(); }
 
     /** Opens / closes the full controls and modifier reference overlay (H key or the HELP button). */
-    public void toggleHelp() { helpShown = !helpShown; buildOverlay(); }
+    public void toggleHelp() { helpShown = !helpShown; if (helpShown) heroStoreShown = false; buildOverlay(); }
+
+    // ---- Hero Store
+    /** Opens / closes the Hero Store overlay (HEROES button or K). The game keeps running underneath. */
+    public void toggleHeroStore() {
+        if (game.getState() != Game.State.PLAYING) return;
+        heroStoreShown = !heroStoreShown;
+        if (heroStoreShown) { helpShown = false; heroStoreNotice = null; }
+        heroStoreKey = "";
+        buildOverlay();
+    }
+    public boolean isHeroStoreOpen() { return heroStoreShown; }
+
+    /** Hero Store BUY button: spends the unlock price and shows the confirmation. */
+    public void buyHero(TowerType t) {
+        if (game.purchaseHero(t)) {
+            heroStoreNotice = t.displayName + " unlocked permanently! Press DEPLOY to place on the map.";
+            hud.flashBanner(t.displayName.toUpperCase() + " UNLOCKED", Ui.c(t.primaryRgb), 2.5);
+        } else {
+            String why = game.heroPurchaseProblem(t);
+            heroStoreNotice = t.displayName + ": " + (why == null ? "purchase failed" : why.toLowerCase());
+        }
+        heroStoreKey = "";
+        buildOverlay();
+    }
+
+    /** Hero Store DEPLOY button: closes the store and enters placement mode for the hero. */
+    public void deployHero(TowerType t) {
+        if (game.getTowerManager().heroProblem(t) != null) return;
+        heroStoreShown = false;
+        buildOverlay();
+        beginPlacing(t);
+    }
+
+    /** Changes whenever a card's button or badge would change (cash crossing a price, unlock, deploy). */
+    private String heroStoreStateKey() {
+        StringBuilder sb = new StringBuilder();
+        for (TowerType t : TowerType.heroes()) {
+            sb.append(game.isHeroUnlocked(t) ? 'U' : game.getCash() >= lindefense.tower.Shop.unlockPriceOf(t) ? 'A' : 'L');
+            sb.append(game.isHeroDeployed(t) ? 'D' : '-');
+        }
+        return sb.append((int) game.getCash()).toString();
+    }
 
     public void upgradeSelected() {
         if (selectedTower != null) { game.upgradeTower(selectedTower); side.requestRebuild(); }
@@ -222,6 +276,7 @@ public final class GameScreen extends GCompound {
     // ------------------------------------------------------------------ input
     private List<UIButton> allButtons() {
         List<UIButton> all = new ArrayList<>(overlayButtons);
+        if (tutorial != null && overlayButtons.isEmpty()) all.addAll(tutorial.getButtons());
         all.addAll(hud.getButtons());
         all.addAll(side.getButtons());
         all.addAll(abilities.getButtons());
@@ -232,7 +287,7 @@ public final class GameScreen extends GCompound {
         mouseMoved(lx, ly);
         if (!overlayButtons.isEmpty()) {
             for (UIButton b : overlayButtons) if (b.hit(lx, ly)) { b.click(); return; }
-            if (game.getState() != Game.State.PLAYING || helpShown || game.isPaused()) return;
+            if (game.getState() != Game.State.PLAYING || helpShown || heroStoreShown || game.isPaused()) return;
         }
         if (rightButton) {
             if (targetingTower != null) { cancelTargeting(); return; }
@@ -244,6 +299,7 @@ public final class GameScreen extends GCompound {
             if (b.hit(lx, ly)) { if (b.click()) return; }
         }
         if (lx >= Ui.PANEL_X) return;
+        if (tutorial != null && tutorial.covers(lx, ly)) return;
         Vec w = toWorld(lx, ly);
         if (w == null) return;
         if (targetingTower != null) { castTargeted(w); return; }
@@ -283,8 +339,10 @@ public final class GameScreen extends GCompound {
             case KeyEvent.VK_3: setSpeed(3); break;
             case KeyEvent.VK_P: togglePause(); break;
             case KeyEvent.VK_H: toggleHelp(); break;
+            case KeyEvent.VK_K: toggleHeroStore(); break;
             case KeyEvent.VK_ESCAPE:
                 if (helpShown) { toggleHelp(); break; }
+                if (heroStoreShown) { toggleHeroStore(); break; }
                 if (isMenuOpen()) { if (menuConfirm != Confirm.NONE) setConfirm(Confirm.NONE); else resumeGame(); break; }
                 if (targetingTower != null) { cancelTargeting(); break; }
                 if (placing != null) beginPlacing(null);
@@ -328,6 +386,7 @@ public final class GameScreen extends GCompound {
         side.update(realDt);
         if (targetingTower != null && !targetingTower.isAlive()) cancelTargeting();
         abilities.update(realDt);
+        if (tutorial != null) tutorial.update(realDt);
         for (UIButton b : allButtons()) b.animate(realDt);
         if (overlayTitle != null) {
             glitchTimer -= realDt;
@@ -346,6 +405,7 @@ public final class GameScreen extends GCompound {
             else if (st == Game.State.DEFEAT) lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.DEFEAT);
         }
         else if (st == Game.State.PLAYING && game.isPaused() != pauseShown) buildOverlay();
+        else if (heroStoreShown && !heroStoreStateKey().equals(heroStoreKey)) buildOverlay();
     }
 
     private Game.State shownMusicState;
@@ -386,7 +446,9 @@ public final class GameScreen extends GCompound {
         pauseToggles = null;
         pauseShown = game.isPaused();
         Game.State st = game.getState();
+        if (st != Game.State.PLAYING) heroStoreShown = false;
         if (helpShown && st == Game.State.PLAYING) { buildHelpOverlay(); return; }
+        if (heroStoreShown && st == Game.State.PLAYING && !game.isPaused()) { buildHeroStoreOverlay(); return; }
         if (st == Game.State.PLAYING && !game.isPaused()) { menuConfirm = Confirm.NONE; return; }
         if (st == Game.State.PLAYING) { buildMenuOverlay(); return; }
         boolean ended = st != Game.State.PLAYING;
@@ -510,6 +572,98 @@ public final class GameScreen extends GCompound {
         refreshHover();
     }
 
+    /**
+     * The Hero Store: one card per hero with its sprite, unlock price, role, primary attack stats, ability and
+     * cooldown, locked / unlocked / deployed status and a BUY or DEPLOY button. Separate from the tower shop.
+     */
+    private void buildHeroStoreOverlay() {
+        heroStoreKey = heroStoreStateKey();
+        overlay.add(Ui.rect(Ui.WORLD_X, Ui.WORLD_Y, Ui.WORLD_W, Ui.WORLD_H, Ui.c(0x02040a, 200), Ui.c(0x000000, 0)));
+        double pw = 1150, ph = 860, px = Ui.WORLD_X + (Ui.WORLD_W - pw) / 2, py = Ui.WORLD_Y + (Ui.WORLD_H - ph) / 2;
+        overlay.add(new Cyber.Chamfer(px, py, pw, ph, 24).fill(new Color(6, 10, 24, 245)).border(Cyber.YELLOW).glow(1).lineWidth(2).ticks(true));
+        overlay.add(Ui.label(Cyber.spaced("// permanent unlocks"), px + 30, py + 34, Cyber.mono(Font.BOLD, 12), Cyber.alpha(Cyber.MAGENTA, 230)));
+        overlay.add(Ui.label("HERO STORE", px + 30, py + 72, Cyber.display(Font.BOLD, 38), Cyber.TEXT));
+        GLabel cash = Ui.label("CREDITS  " + Ui.money(game.getCash()), 0, py + 66, Cyber.mono(Font.BOLD, 18), Cyber.YELLOW);
+        cash.setLocation(px + pw - 30 - 130 - 20 - cash.getWidth(), py + 66);
+        overlay.add(cash);
+        UIButton close = new UIButton(px + pw - 30 - 130, py + 40, 130, 38, "CLOSE  [K]", Cyber.display(Font.BOLD, 16), this::toggleHeroStore);
+        close.setAccent(Cyber.MAGENTA);
+        overlay.add(close); overlayButtons.add(close);
+        String sub = heroStoreNotice != null ? heroStoreNotice
+            : "Buy a hero once to unlock it forever. Unlocked heroes deploy for free, once per match. Distances in map units (1u = " + Ui.fmt(lindefense.tower.TowerStats.MAP_UNIT) + " px).";
+        overlay.add(Ui.label(sub, px + 30, py + 98, Cyber.body(Font.BOLD, 14), heroStoreNotice != null ? Cyber.GREEN : Cyber.MUTED));
+        TowerType[] heroes = TowerType.heroes();
+        int cols = 3;
+        double gap = 14, cx0 = px + 24, cy0 = py + 116;
+        double cw = (pw - 48 - gap * (cols - 1)) / cols, chh = (ph - 116 - 24 - gap) / 2;
+        for (int i = 0; i < heroes.length; i++) {
+            double x = cx0 + (i % cols) * (cw + gap), y = cy0 + (i / cols) * (chh + gap);
+            heroCard(heroes[i], x, y, cw, chh);
+        }
+        refreshHover();
+    }
+
+    private void heroCard(TowerType t, double x, double y, double w, double h) {
+        lindefense.tower.TowerDef d = lindefense.tower.TowerCatalog.get(t);
+        boolean unlocked = game.isHeroUnlocked(t), deployed = game.isHeroDeployed(t);
+        int price = d.unlockCost;
+        boolean afford = game.getCash() >= price;
+        Color accent = Ui.c(t.primaryRgb);
+        overlay.add(new Cyber.Chamfer(x, y, w, h, 12).scan(false).fill(new Color(9, 15, 34, 240)).border(Cyber.alpha(unlocked ? accent : Cyber.DIM, unlocked ? 220 : 160)).lineWidth(1.6));
+        // sprite
+        acm.graphics.GCompound icon = lindefense.ui.sprites.towers.TowerIcons.create(t, 0, 92);
+        icon.setLocation(x + 58, y + 62);
+        overlay.add(icon);
+        if (!unlocked) overlay.add(new Cyber.Ring(x + 58 - 50, y + 62 - 50, 100, 100, new Color(5, 9, 22, 120), null));
+        // name, role, status
+        double tx = x + 118, tw = w - 118 - 12;
+        overlay.add(Ui.label(t.displayName, tx, y + 32, Cyber.display(Font.BOLD, 24), Cyber.lerp(accent, Color.WHITE, 0.35)));
+        double ly = y + 32;
+        for (String l : Ui.wrap(HeroStatText.role(t), Cyber.body(Font.PLAIN, 12), tw)) { ly += 15; overlay.add(Ui.label(l, tx, ly, Cyber.body(Font.PLAIN, 12), Cyber.MUTED)); }
+        String status = deployed ? "DEPLOYED" : unlocked ? "UNLOCKED" : "LOCKED";
+        Color sc = deployed ? Cyber.DIM : unlocked ? Cyber.GREEN : Cyber.RED;
+        GLabel sl = Ui.label(status, 0, 0, Cyber.mono(Font.BOLD, 11), sc);
+        double bw = sl.getWidth() + 16;
+        overlay.add(new Cyber.Chamfer(tx, ly + 8, bw, 18, 5).scan(false).fill(Cyber.alpha(sc, 40)).border(sc));
+        sl.setLocation(tx + 8, ly + 21);
+        overlay.add(sl);
+        GLabel pr = Ui.label(Ui.money(price), 0, ly + 22, Cyber.mono(Font.BOLD, 16), unlocked ? Cyber.DIM : afford ? Cyber.YELLOW : Cyber.RED);
+        pr.setLocation(x + w - 14 - pr.getWidth(), ly + 22);
+        overlay.add(pr);
+        // primary attack
+        double yy = Math.max(y + 124, ly + 44);
+        overlay.add(Ui.label(Cyber.spaced("// " + HeroStatText.attackName(t)), x + 14, yy, Cyber.mono(Font.BOLD, 10), Cyber.CYAN));
+        for (String l : HeroStatText.attackLines(t)) { yy += 16; overlay.add(Ui.label(l, x + 14, yy, Cyber.mono(Font.BOLD, 11), Cyber.TEXT)); }
+        // ability
+        lindefense.tower.AbilityDef a = d.ability;
+        yy += 24;
+        overlay.add(Ui.label(Cyber.spaced("// ability: " + a.name), x + 14, yy, Cyber.mono(Font.BOLD, 10), Cyber.MAGENTA));
+        GLabel cd = Ui.label((int) a.cooldown + "s cooldown", 0, yy, Cyber.mono(Font.BOLD, 10), Cyber.MUTED);
+        cd.setLocation(x + w - 14 - cd.getWidth(), yy);
+        overlay.add(cd);
+        int lines = 0;
+        for (String l : Ui.wrap(a.description, Cyber.body(Font.PLAIN, 12), w - 28)) {
+            if (++lines > 3) break;
+            yy += 15; overlay.add(Ui.label(l, x + 14, yy, Cyber.body(Font.PLAIN, 12), Cyber.MUTED));
+        }
+        // action button
+        double by = y + h - 50;
+        UIButton b;
+        if (!unlocked) {
+            b = new UIButton(x + 14, by, w - 28, 38, afford ? "BUY  " + Ui.money(price) : "NEED " + Ui.money(price - game.getCash()) + " MORE", Cyber.display(Font.BOLD, 17), () -> buyHero(t));
+            b.setEnabled(afford);
+            b.setAccent(Cyber.YELLOW);
+            if (afford) b.setPrimary(true);
+        } else if (!deployed) {
+            b = new UIButton(x + 14, by, w - 28, 38, "DEPLOY (FREE)", Cyber.display(Font.BOLD, 17), () -> deployHero(t));
+            b.setAccent(Cyber.GREEN);
+        } else {
+            b = new UIButton(x + 14, by, w - 28, 38, "DEPLOYED THIS MATCH", Cyber.display(Font.BOLD, 17), null);
+            b.setEnabled(false);
+        }
+        overlay.add(b); overlayButtons.add(b);
+    }
+
     /** Full controls / modifiers / economy reference, opened from the side panel. */
     private void buildHelpOverlay() {
         overlay.add(Ui.rect(Ui.WORLD_X, Ui.WORLD_Y, Ui.WORLD_W, Ui.WORLD_H, Ui.c(0x02040a, 205), Ui.c(0x000000, 0)));
@@ -520,7 +674,7 @@ public final class GameScreen extends GCompound {
         overlay.add(Ui.label("HELP", px + 34, py + 80, Cyber.display(Font.BOLD, 40), Cyber.TEXT));
         String[][] keys = { { "SPACE", "start next wave" }, { "1  2  3", "game speed" }, { "P", "pause / resume" }, { "B", "all towers / faction tabs" },
             { "ESC", "cancel / deselect, else pause menu" }, { "U", "upgrade selected tower" }, { "S", "sell selected tower" }, { "A", "fire selected tower's ability" },
-            { "T", "cycle targeting priority" }, { "M", "music on / off" }, { "N", "sound on / off" }, { "H", "toggle this help" } };
+            { "T", "cycle targeting priority" }, { "K", "Hero Store" }, { "M", "music on / off" }, { "N", "sound on / off" }, { "H", "toggle this help" } };
         double ky = py + 126;
         overlay.add(Ui.label(Cyber.spaced("// controls"), px + 34, ky, Cyber.mono(Font.BOLD, 11), Cyber.CYAN));
         for (String[] k : keys) {
@@ -530,7 +684,8 @@ public final class GameScreen extends GCompound {
         }
         double rx = px + 470, ry = py + 126, rw = pw - 470 - 34;
         String[][] notes = {
-            { "enemy modifiers", "Camo enemies need detection (Perplexity, Grok, Student + AI, or Gemini / Llama after their second upgrade). Regrow enemies heal over time. Fortified enemies carry double HP." },
+            { "enemy modifiers", "Camo enemies need detection (Perplexity, Grok, or Gemini / Llama after their second upgrade). Regrow enemies heal over time. Fortified enemies carry double HP." },
+            { "hero store", "Open with HEROES or K. Buy a hero once to unlock it permanently, then deploy it free, once per match. Heroes are not in the tower shop." },
             { "economy", "Enemies pay cash when destroyed and every wave pays a bonus. Selling refunds most of what you spent on a tower." },
             { "bosses", "Boss health shows in the dock under the top bar. Palantir (wave " + lindefense.wave.WaveData.WAVE_COUNT + ") disrupts your strongest towers with Predictive Surveillance; watch the telegraph. Towers near Perplexity are immune." } };
         for (String[] n : notes) {

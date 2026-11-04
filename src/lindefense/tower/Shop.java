@@ -2,7 +2,10 @@ package lindefense.tower;
 
 import lindefense.sim.Game;
 
-/** Pricing helpers: purchase price, next-upgrade price, sell refunds (70%) and shop availability rules. */
+/**
+ * Pricing helpers: purchase price, next-upgrade price, sell refunds (70%) and shop availability rules. Heroes are
+ * free to deploy once unlocked in the Hero Store, so dismissing one refunds nothing.
+ */
 public final class Shop {
     public static final double SELL_FRACTION = 0.70;
 
@@ -20,12 +23,16 @@ public final class Shop {
         return (int) Math.floor(t.getInvestedCost() * SELL_FRACTION);
     }
 
+    /** Hero Store price that permanently unlocks a hero (0 for shop towers). */
+    public static int unlockPriceOf(TowerType type) { return TowerCatalog.get(type).unlockCost; }
+
     /**
-     * Position-independent reason the tower type cannot be bought right now, or null if it can: only one copy of
-     * each hero may be placed ("Only one Brad Lindemann"), plus the cash check. The UI uses this to grey out shop cards.
+     * Position-independent reason the tower type cannot be placed right now, or null if it can: heroes must be
+     * unlocked and are deployed once per match; everything else needs the cash. The UI uses this to grey out cards.
      */
     public static String unavailableReason(Game game, TowerType type) {
-        if (type.isHero() && game.getTowerManager().heroPlaced(type)) return "Only one " + type.displayName + " allowed";
+        String hero = game.getTowerManager().heroProblem(type);
+        if (hero != null) return hero;
         if (game.getCash() < priceOf(type)) return "Not enough cash";
         return null;
     }

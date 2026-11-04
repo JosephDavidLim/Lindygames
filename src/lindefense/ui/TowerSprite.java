@@ -58,16 +58,17 @@ public final class TowerSprite extends GCompound {
         double r = tower.getRadius();
         boolean temp = tower.isTemporary();
 
-        art = TowerArtFactory.create(type, TowerArtFactory.artStage(builtTier), r);
+        art = TowerArtFactory.create(type, TowerArtFactory.artStage(type, builtTier), r);
         art.aim(aimAngle);
         add(art);
 
-        // tier pips (3, one per upgrade) under the plate
-        if (!temp) {
-            double pw = r * 0.4, ph = r * 0.18, gap = r * 0.12;
-            double x0 = -(3 * pw + 2 * gap) / 2;
-            for (int i = 0; i < 3; i++) {
-                Color fill = i < builtTier ? (builtTier >= 3 ? Art.GOLD : Ui.GREEN) : PIP_OFF;
+        // tier pips (one per upgrade) under the plate; heroes have none
+        int pips = tower.getMaxTier();
+        if (!temp && pips > 0) {
+            double pw = r * (pips > 3 ? 0.32 : 0.4), ph = r * 0.18, gap = r * 0.12;
+            double x0 = -(pips * pw + (pips - 1) * gap) / 2;
+            for (int i = 0; i < pips; i++) {
+                Color fill = i < builtTier ? (builtTier >= pips ? Art.GOLD : Ui.GREEN) : PIP_OFF;
                 add(Ui.rect(x0 + i * (pw + gap), r * 1.22, pw, ph, fill, Art.INK));
             }
         }
@@ -96,7 +97,7 @@ public final class TowerSprite extends GCompound {
         // No always-on name label: WorldView shows a hover / selection nameplate instead.
     }
 
-    private static int clampTier(int t) { return Math.max(0, Math.min(3, t)); }
+    private int clampTier(int t) { return Math.max(0, Math.min(tower.getMaxTier(), t)); }
 
     /** Sets visibility only when it changes (every ACM setter walks up to the canvas to request a repaint). */
     private static void show(acm.graphics.GObject o, boolean visible) { if (o.isVisible() != visible) o.setVisible(visible); }

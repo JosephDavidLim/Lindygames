@@ -15,11 +15,15 @@ import lindefense.tower.data.TowerBuilder;
 /**
  * Central tower registry. The numbers live in the per-faction data files in {@code tower/data}
  * ({@link HeroTowers}, {@link PrimaryTowers}, {@link MilitaryTowers}, {@link MagicTowers}, {@link SupportTowers},
- * {@link TitanTowers}), transcribed from the tower specification (sections 3.1-3.6). Every purchasable tower
- * is base + exactly {@value #UPGRADES} upgrades (tiers 0-3) and one ability.
+ * {@link TitanTowers}), transcribed from the tower specification. Standard shop towers are base +
+ * {@value #STANDARD_UPGRADES} upgrades; Zethos has {@value #ZETHOS_UPGRADES}; Hero Store heroes have none. Every
+ * purchasable unit has one ability.
  */
 public final class TowerCatalog {
-    public static final int UPGRADES = 3;
+    /** Upgrades of every standard shop tower. */
+    public static final int STANDARD_UPGRADES = 3;
+    /** Zethos's upgrade path (Quantum Acceleration .. Reality Engine). */
+    public static final int ZETHOS_UPGRADES = 4;
     private static final Map<TowerType, TowerDef> DEFS = new EnumMap<>(TowerType.class);
 
     private TowerCatalog() { }
@@ -27,7 +31,21 @@ public final class TowerCatalog {
     public static TowerDef get(TowerType type) { return DEFS.get(type); }
     public static Map<TowerType, TowerDef> all() { return Collections.unmodifiableMap(DEFS); }
 
-    private static void register(Iterable<TowerDef> defs) { for (TowerDef d : defs) DEFS.put(d.type, d); }
+    /**
+     * Whether a tower type keeps an active ability. Only the Hero Store heroes and Zethos (whose Reality Collapse is
+     * part of its specification) have one; the original shop towers are passive (no special abilities).
+     */
+    public static boolean hasActiveAbility(TowerType type) { return type.isHero() || type == TowerType.ZETHOS; }
+
+    private static void register(Iterable<TowerDef> defs) {
+        for (TowerDef d : defs) DEFS.put(d.type, hasActiveAbility(d.type) ? d : withoutAbility(d));
+    }
+
+    /** The same definition with its active ability removed. */
+    private static TowerDef withoutAbility(TowerDef d) {
+        return new TowerDef(d.type, d.subtitle, d.description, d.baseCost, d.radius, d.baseStats, d.upgrades, null, d.tierLabels,
+            d.unlockCost, d.defaultTargeting);
+    }
 
     static {
         register(HeroTowers.all());

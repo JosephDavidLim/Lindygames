@@ -34,6 +34,8 @@ public final class AttackContext {
     public boolean cancel;
     /** Free-form tag copied onto projectiles ("chord", "heavy", ...). */
     public String tag;
+    /** Custom collision logic copied onto the projectiles of this attack (null = generic). */
+    public Projectile.ImpactHandler onImpact;
 
     public AttackContext(Tower tower, TowerStats stats, List<Enemy> targets) {
         this.tower = tower; this.stats = stats; this.targets = targets;

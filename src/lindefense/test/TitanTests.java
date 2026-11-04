@@ -61,27 +61,18 @@ public final class TitanTests {
         run("b3.minimax", TitanTests::minimax);
         run("b3.qwen.droneFormation", TitanTests::qwenDrones);
         run("b3.llama.mythicalStampede", TitanTests::llamaShockwave);
-        run("b3.llama.openTitanStampede", TitanTests::llamaHerd);
         run("b3.llama.camoRespected", TitanTests::llamaCamo);
         run("b3.mistral.gust", TitanTests::mistralGust);
         run("b3.mistral.cyclone", TitanTests::mistralCyclone);
         run("b3.mistral.hurricane", TitanTests::mistralHurricane);
-        run("b3.mistral.stratosphereTempest", TitanTests::mistralTempest);
         run("b3.cohere.fragmentation", TitanTests::cohereFragmentation);
-        run("b3.cohere.commandOverride", TitanTests::cohereOverride);
         run("b3.glm.nodeNetwork", TitanTests::glmNetwork);
         run("b3.glm.gridSlowAndFortified", TitanTests::glmGrid);
         run("b3.kimi.crystalBurst", TitanTests::kimiBurst);
-        run("b3.kimi.infiniteContextBurst", TitanTests::kimiAbility);
         run("b3.kimi.memoryAndFortified", TitanTests::kimiMemory);
         run("b3.minimax.clones", TitanTests::minimaxClones);
         run("b3.minimax.barrage", TitanTests::minimaxBarrage);
-        run("b3.minimax.overclock", TitanTests::minimaxOverclock);
         run("b3.qwen.u3FortifiedBoss", TitanTests::qwenFortifiedBoss);
-        for (Object[] r : BASE) {
-            TowerType type = (TowerType) r[0];
-            run("b3.abilityCooldown." + type, () -> abilityCooldown(type));
-        }
         run("b3.stressTitans", TitanTests::stressTitans);
     }
 
@@ -166,9 +157,7 @@ public final class TitanTests {
         check(s.clones == 2, "MiniMax U2: packets split into 2");
         s = TowerCatalog.get(TowerType.MINIMAX).statsForTier(3);
         check(s.p("cloneCount") == 3 && s.p("barrageInterval") == 6 && s.p("barrageCount") == 20, "MiniMax U3: 3 clones, barrage of 20 every 6 s");
-        int[] cds = { 90, 90, 75, 80, 90, 100, 60 };
-        for (int i = 0; i < BASE.length; i++) check(TowerCatalog.get((TowerType) BASE[i][0]).ability.cooldown == cds[i], BASE[i][0] + " ability cooldown " + cds[i]);
-        check(TowerCatalog.get(TowerType.MISTRAL).ability.needsTarget, "Stratosphere Tempest needs a player-chosen bend");
+        for (Object[] r : BASE) check(TowerCatalog.get((TowerType) r[0]).ability == null, r[0] + " has no active ability");
     }
 
     private static void baseAttacksDamageEnemies() {
@@ -195,21 +184,6 @@ public final class TitanTests {
         Enemy small = scaled(g2, EnemyType.STATIC_ARRAY, 400, 30), big = scaled(g2, EnemyType.MERGE_SORT, 410, 30);
         check(near(g2.getCombat().applyHit(small, q3.getStats().hit, q3, 1, 0), 4), "damage 4 vs small enemies");
         check(near(g2.getCombat().applyHit(big, q3.getStats().hit, q3, 1, 0), 12), "x3 vs enemies with base HP >= 5");
-        // ability: 20 to all, strip Fortified from airships (not Palantir), Palantir loses its phase shield 10 s
-        Game g3 = frozen();
-        Tower q0 = towerNearTrack(g3, TowerType.QWEN, 0, 400);
-        Enemy moab = spawnAt(g3, EnemyType.BELLARMINE_COLLEGE_PREP, EnumSet.of(Modifier.FORTIFIED), 0, 900);
-        Boss pal = (Boss) spawnAt(g3, EnemyType.PALANTIR, EnumSet.of(Modifier.FORTIFIED), 0, 1000);
-        Enemy norm = scaled(g3, EnemyType.DYNAMIC_ARRAY, 1100, 30);
-        double h1 = norm.getHp(), hm = moab.getHp(), hp = pal.getHp();
-        q0.resetAbilityCooldown();
-        check(g3.activateAbility(q0), "Cosmic Sovereign Burst activates");
-        check(near(h1 - norm.getHp(), 20), "20 damage to all enemies");
-        check(!moab.isFortified(), "Fortified removed from airships");
-        check(pal.isFortified(), "...except Palantir");
-        check(pal.isPhaseShieldDown() && !pal.isControlImmune() && hp - pal.getHp() > 0, "Palantir loses its phase shield and takes the wave");
-        runSeconds(g3, 10.5);
-        check(pal.isControlImmune(), "Palantir's shield returns after 10 s");
     }
 
     private static void llama() {
@@ -288,19 +262,6 @@ public final class TitanTests {
         Enemy e = scaled(g, EnemyType.HEAP_SORT, 400, 20);
         g.getCombat().applyHit(e, t.getStats().hit, t.getType() == TowerType.GLM ? t : null, 1, 0);
         check(near(e.getSlowFraction(), 0.10), "GRAVITY pebble slows 10% on hit");
-        // ability: stun all non-boss enemies 5 s, bosses 1.5 s
-        Game g2 = frozen();
-        Tower t2 = towerNearTrack(g2, TowerType.GLM, 0, 400);
-        Enemy n = at(g2, EnemyType.QUICK_SORT, 900), boss = at(g2, EnemyType.BELLARMINE_COLLEGE_PREP, 1000);
-        t2.resetAbilityCooldown();
-        check(g2.activateAbility(t2), "Matrix Overload activates");
-        check(n.isStunned() && boss.isStunned(), "all enemies on the track are stunned");
-        n.tickStatuses(4.9);
-        boss.tickStatuses(1.4);
-        check(n.isStunned() && boss.isStunned(), "...still stunned just before the limits");
-        n.tickStatuses(0.2);
-        boss.tickStatuses(0.2);
-        check(!n.isStunned() && !boss.isStunned(), "non-bosses stunned 5 s, bosses 1.5 s");
     }
 
     private static void kimi() {
@@ -492,28 +453,6 @@ public final class TitanTests {
         check(e3.getDistance() <= 360 + 1e-9, "the shockwave fires from the sim loop every 4 s (and hits camo: U2+ detection)");
     }
 
-    private static void llamaHerd() {
-        Game g = frozen();
-        Tower l = towerNearTrack(g, TowerType.LLAMA, 0, 400);
-        Enemy a = scaled(g, EnemyType.DYNAMIC_ARRAY, 900, 100), b = scaled(g, EnemyType.DYNAMIC_ARRAY, 1100, 100);
-        Enemy boss = at(g, EnemyType.BELLARMINE_COLLEGE_PREP, 1000);
-        Enemy camo = camoAt(g, EnemyType.DYNAMIC_ARRAY, 1050, 100);
-        g.addCash(0, null);
-        l.resetAbilityCooldown();
-        check(g.activateAbility(l), "Open Titan Stampede activates");
-        int routes = g.getMap().getRoutes().size();
-        check(g.getEffects().getWalkers().size() == routes, "one herd per route (" + routes + ")");
-        TrackWalker w = g.getEffects().getWalkers().get(0);
-        check(w.kind.equals("herd") && w.distance == w.route.getTotalLength() && w.endDistance == 0, "the herd runs exit -> entrance");
-        runSeconds(g, 30);
-        check(near(a.getMaxHp() - a.getHp(), 15) && near(b.getMaxHp() - b.getHp(), 15) && near(camo.getMaxHp() - camo.getHp(), 15),
-            "15 damage to every enemy it touches, once each (camo included): " + (a.getMaxHp() - a.getHp()));
-        check(near(boss.getMaxHp() - boss.getHp(), 60 * 0.75), "bosses take 60 (after 25% armour): " + (boss.getMaxHp() - boss.getHp()));
-        check(near(boss.getDistance(), 1000 - 50), "bosses are knocked back 50 px: " + boss.getDistance());
-        check(g.getEffects().getWalkers().isEmpty(), "the herd expires at the entrance");
-        check(near(l.getAbilityCooldownRemaining(), 90) || l.getAbilityCooldownRemaining() < 90 && l.getAbilityCooldownRemaining() > 55, "cooldown spent");
-    }
-
     private static void llamaCamo() {
         // base Llama (no detection): its creatures do not touch camo enemies; U2 does
         Game g = frozen();
@@ -604,40 +543,6 @@ public final class TitanTests {
         check(countZones(g, "vortex") == 0, "selling Mistral removes the vortex");
     }
 
-    private static void mistralTempest() {
-        Game g = frozen();
-        Tower m = towerNearTrack(g, TowerType.MISTRAL, 0, 400);
-        Vec b = bend(g);
-        Vec click = b.add(new Vec(35, 25));
-        check(m.getAbility().needsTarget, "Tempest is player-targeted");
-        check(!g.activateAbility(m), "refused without a target point");
-        check(!g.activateAbility(m, click), "locked at 50% cooldown");
-        check(near(m.getAbilityCooldownRemaining(), 37.5), "starts at 50% cooldown");
-        runSeconds(g, 37.6);
-        check(m.isAbilityReady(), "ready after 37.5 s of game time");
-        Enemy boss = camoAt(g, EnemyType.BELLARMINE_COLLEGE_PREP, g.getMap().getRoutes().get(0).nearestDistanceAlong(b), 1);
-        Enemy norm = camoAt(g, EnemyType.DYNAMIC_ARRAY, g.getMap().getRoutes().get(0).nearestDistanceAlong(b), 300);
-        double bd = boss.getDistance(), bhp = boss.getHp(), nhp = norm.getHp();
-        check(g.activateAbility(m, click), "activates at the chosen point");
-        check(near(m.getAbilityCooldownRemaining(), 75), "cooldown 75 s");
-        check(countZones(g, "tempest") == 1, "one tempest zone");
-        TrackZone z = g.getEffects().zonesOf(m, "tempest").get(0);
-        check(z.center.dist(b) < 1e-6, "snapped to the bend nearest the clicked point");
-        check(z.bossesOnly && near(z.duration, 15) && near(z.radius, 90) && near(z.tickInterval, 0.3), "bosses only, 15 s, radius 90, tick 0.3");
-        check(near(boss.getDistance(), bd - 100), "MOAB-class pushed back 100 px: " + (bd - boss.getDistance()));
-        boss.setDistance(bd);   // the airship walks back into the storm
-        runPinned(g, 15.5, boss);
-        double ticks = (bhp - boss.getHp()) / (10 * 0.75);
-        check(ticks >= 48 && ticks <= 51, "10 damage every 0.3 s to airships (" + ticks + " ticks)");
-        check(near(boss.getDistance(), bd), "...pushed once per cast, not again on every tick");
-        check(norm.getHp() == nhp && norm.getDistance() == bd, "ordinary enemies are not affected");
-        check(countZones(g, "tempest") == 0, "the tempest ends after 15 s");
-        // a click far from any bend snaps to the nearest track point
-        m.resetAbilityCooldown();
-        check(g.activateAbility(m, new Vec(10, 10)), "a click anywhere is accepted and snapped");
-        check(g.getEffects().nearestTrackPoint(g.getEffects().zonesOf(m, "tempest").get(0).center).position.dist(g.getEffects().zonesOf(m, "tempest").get(0).center) < 1e-6, "...onto the track");
-    }
-
     // ------------------------------------------------------------------ Cohere
     private static void cohereFragmentation() {
         Game g = frozen();
@@ -673,46 +578,6 @@ public final class TitanTests {
         for (VisualEvent ev : g0.getEvents()) if (ev.kind == VisualEvent.Kind.BEAM) b0++;
         check(b0 == 0, "base Cohere has no shrapnel");
         check(c.getStats().p("shrapnelPierce") == 2 && c.getStats().p("shrapnelDamage") == 1, "shrapnel: damage 1, pierce 2");
-    }
-
-    private static void cohereOverride() {
-        Game g = frozen();
-        Tower c = towerNearTrack(g, TowerType.COHERE, 0, 400);
-        Enemy a = camoAt(g, EnemyType.DYNAMIC_ARRAY, 400, 500), b = camoAt(g, EnemyType.DYNAMIC_ARRAY, 402, 500);
-        Enemy moab = g.getEnemyManager().spawnScaled(EnemyType.BELLARMINE_COLLEGE_PREP, CAMO, 0, 404, 1.0, 1.0);
-        g.getEnemyManager().update(0);
-        Enemy d = scaled(g, EnemyType.DYNAMIC_ARRAY, 520, 500);
-        Enemy bfb = spawnAt(g, EnemyType.SW_RESOURCE_CONSULTANT, null, 0, 395);
-        Enemy zomg = spawnAt(g, EnemyType.THREE_COM, null, 0, 406);
-        Enemy ddt = spawnAt(g, EnemyType.LOCKHEED_MARTIN, null, 0, 408);
-        Enemy bad = spawnAt(g, EnemyType.PALANTIR, null, 0, 410);
-        c.resetAbilityCooldown();
-        check(g.activateAbility(c), "Command Override activates");
-        check(a.isReversed() && b.isReversed() && moab.isReversed(), "the 3 nearest non-boss enemies reverse (Bellarmine College Prep allowed)");
-        check(!d.isReversed(), "...only 3 of them");
-        check(!bfb.isReversed() && !zomg.isReversed() && !ddt.isReversed() && !bad.isReversed(), "BFB, ZOMG, DDT and BAD are excluded");
-        check(near(a.getReverseDps(), 10), "10 damage/s on contact");
-        double hpA = a.getHp(), hpD = d.getHp();
-        runSeconds(g, 1.0);
-        double lost = hpA - a.getHp();
-        check(lost >= 19 && lost <= 21, "each reversed enemy takes 10 dmg/s from the two others it touches: " + lost);
-        check(d.getHp() == hpD || d.getHp() < hpD, "(control) the far enemy is not reversed");
-        runSeconds(g, 7.2);
-        check(!a.isReversed() && !b.isReversed() && !moab.isReversed(), "reversal ends after 8 s");
-        // with nothing to reverse the ability is refused (no cooldown spent)
-        Game g2 = frozen();
-        Tower c2 = towerNearTrack(g2, TowerType.COHERE, 0, 400);
-        spawnAt(g2, EnemyType.SW_RESOURCE_CONSULTANT, null, 0, 900);
-        c2.resetAbilityCooldown();
-        check(!g2.activateAbility(c2) && c2.isAbilityReady(), "no eligible enemy: refused, cooldown kept");
-        // reversed enemies really walk backwards
-        Game g3 = newGame(0);
-        Tower c3 = towerNearTrack(g3, TowerType.COHERE, 0, 400);
-        Enemy w = spawnAt(g3, EnemyType.DYNAMIC_ARRAY, CAMO, 0, 800);
-        c3.resetAbilityCooldown();
-        g3.activateAbility(c3);
-        runSeconds(g3, 2);
-        check(w.getDistance() < 800, "a reversed enemy moves toward the entrance: " + w.getDistance());
     }
 
     // ------------------------------------------------------------------ GLM
@@ -815,43 +680,6 @@ public final class TitanTests {
         check(n2.getHp() == n2.getMaxHp(), "U2 has no crystal burst");
     }
 
-    private static void kimiAbility() {
-        Game g = frozen();
-        Tower k = towerNearTrack(g, TowerType.KIMI, 1, 400);
-        for (int i = 0; i < 300; i++) k.addKill();
-        Enemy a = scaled(g, EnemyType.DYNAMIC_ARRAY, 900, 1000), b = scaled(g, EnemyType.QUICK_SORT, 1000, 1000);
-        Enemy boss = at(g, EnemyType.BELLARMINE_COLLEGE_PREP, 1100);
-        Enemy fort = g.getEnemyManager().spawnScaled(EnemyType.DYNAMIC_ARRAY, EnumSet.of(Modifier.FORTIFIED), 0, 950, 1000, 1.0);
-        Enemy fortBoss = spawnAt(g, EnemyType.THREE_COM, EnumSet.of(Modifier.FORTIFIED), 0, 1050);
-        g.getEnemyManager().update(0);
-        k.resetAbilityCooldown();
-        double ha = a.getHp(), hb = b.getHp(), hboss = boss.getHp(), hf = fort.getHp(), hfb = fortBoss.getHp();
-        check(g.activateAbility(k), "Infinite Context Burst activates");
-        check(near(ha - a.getHp(), 15) && near(hb - b.getHp(), 15), "memory stacks (3) x 5 = 15 to every non-Fortified enemy: " + (ha - a.getHp()));
-        check(near(hboss - boss.getHp(), 7.5), "bosses take half: " + (hboss - boss.getHp()));
-        check(fort.getHp() == hf && fortBoss.getHp() == hfb, "Fortified enemies (and Fortified bosses) are immune");
-        check(near(k.getAbilityCooldownRemaining(), 100), "cooldown 100 s");
-        // cap: U1 +5, U3 +12
-        Game g2 = frozen();
-        Tower k1 = towerNearTrack(g2, TowerType.KIMI, 1, 400);
-        for (int i = 0; i < 5000; i++) k1.addKill();
-        check(KimiBehavior.memoryStacks(k1) == 5, "U1 memory capped at +5");
-        Enemy e = scaled(g2, EnemyType.DYNAMIC_ARRAY, 900, 1000);
-        k1.resetAbilityCooldown();
-        double h = e.getHp();
-        g2.activateAbility(k1);
-        check(near(h - e.getHp(), 25), "damage = stacks x 5 = 25");
-        Game g3 = frozen();
-        Tower k3 = towerNearTrack(g3, TowerType.KIMI, 3, 400);
-        for (int i = 0; i < 5000; i++) k3.addKill();
-        check(KimiBehavior.memoryStacks(k3) == 12, "U3 memory capped at +12");
-        Enemy e3 = scaled(g3, EnemyType.DYNAMIC_ARRAY, 900, 1000);
-        k3.resetAbilityCooldown();
-        h = e3.getHp();
-        g3.activateAbility(k3);
-        check(near(h - e3.getHp(), 60), "12 stacks x 5 = 60");
-    }
-
     private static void kimiMemory() {
         Game g = frozen();
         Tower k = towerNearTrack(g, TowerType.KIMI, 1, 400);
@@ -940,57 +768,7 @@ public final class TitanTests {
         check(g3.getCombat().getProjectiles().isEmpty(), "U2 has no barrage");
     }
 
-    private static void minimaxOverclock() {
-        Game g = frozen();
-        Tower m = towerNearTrack(g, TowerType.MINIMAX, 1, 400);
-        scaled(g, EnemyType.HEAP_SORT, 400, 100000);
-        check(near(m.getAbilityCooldownRemaining(), 30), "starts at 50% cooldown");
-        check(!g.activateAbility(m), "locked at start");
-        runSeconds(g, 30.1);
-        double rate = m.effectiveRate(g);
-        check(g.activateAbility(m), "Scale Factor Overclock activates");
-        check(near(m.getAbilityCooldownRemaining(), 60), "cooldown 60 s");
-        check(near(m.effectiveRate(g) / rate, 3), "fire rate x3: " + m.effectiveRate(g) / rate);
-        g.run(2);
-        for (Drone d : g.getEffects().dronesOf(m, "clone")) {
-            check(near(d.stats.rate / m.getStats().rate, 3) && d.stats.bounces == 18, "clones also fire x3 faster with x3 bounces (" + d.stats.bounces + ")");
-        }
-        g.getCombat().attack(m);
-        g.getCombat().updateProjectiles(0);
-        int maxBounces = 0;
-        for (Projectile p : g.getCombat().getProjectiles()) maxBounces = Math.max(maxBounces, p.getBouncesLeft());
-        check(maxBounces == 18, "bounce count x3 (6 -> 18): " + maxBounces);
-        runSeconds(g, 10.2);
-        check(near(m.effectiveRate(g) / rate, 1), "overclock ends after 10 s");
-        for (Drone d : g.getEffects().dronesOf(m, "clone")) check(d.stats.bounces == 6 && near(d.stats.rate, m.getStats().rate), "clones return to normal");
-        g.getCombat().attack(m);
-        g.getCombat().updateProjectiles(0);
-        maxBounces = 0;
-        for (Projectile p : g.getCombat().getProjectiles()) maxBounces = Math.max(maxBounces, p.getBouncesLeft());
-        check(maxBounces == 6, "bounces back to 6: " + maxBounces);
-    }
-
     // ------------------------------------------------------------------ ability cooldown rules (spec 3.0)
-    private static void abilityCooldown(TowerType type) {
-        Game g = frozen();
-        Tower t = towerNearTrack(g, type, 0, 400);
-        scaled(g, EnemyType.DYNAMIC_ARRAY, 900, 1000);
-        double cd = t.getAbility().cooldown;
-        Vec pt = bend(g);
-        check(near(t.getAbilityCooldownRemaining(), cd * 0.5), type + " starts at 50% cooldown: " + t.getAbilityCooldownRemaining());
-        boolean early = t.getAbility().needsTarget ? g.activateAbility(t, pt) : g.activateAbility(t);
-        check(!early, type + " cannot be used at 50%");
-        g.setSpeed(2);
-        double realSeconds = 0;
-        while (g.getTime() < cd / 2 - 1 && realSeconds < cd) { g.advance(0.2); realSeconds += 0.2; }
-        check(!t.isAbilityReady(), type + " not ready one second early");
-        while (!t.isAbilityReady() && realSeconds < cd) { g.advance(0.2); realSeconds += 0.2; }
-        check(t.isAbilityReady() && realSeconds < cd / 4 + 1, type + " cooldown runs on game time (2x speed): " + realSeconds + " real s for " + g.getTime() + " game s");
-        boolean ok = t.getAbility().needsTarget ? g.activateAbility(t, pt) : g.activateAbility(t);
-        check(ok && near(t.getAbilityCooldownRemaining(), cd), type + " fires and restarts the full cooldown");
-        check(!(t.getAbility().needsTarget ? g.activateAbility(t, pt) : g.activateAbility(t)), type + " cannot be re-used on cooldown");
-    }
-
     // ------------------------------------------------------------------ stress
     /** All 7 towers at U3 with abilities spammed through the late waves on every map: entity counts must stay bounded. */
     private static void stressTitans() {

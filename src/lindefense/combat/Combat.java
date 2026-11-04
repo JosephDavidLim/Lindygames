@@ -181,7 +181,7 @@ public class Combat {
                 sh.damageMult = c.damageMult; sh.extraDamage = c.extraDamage; sh.pierce = c.pierce;
                 sh.bounces = c.bounces; sh.bounceRange = c.stats.bounceRange; sh.bounceSpeedGain = c.stats.p("bounceSpeedGain", 0);
                 sh.clones = c.clones; sh.splash = c.splash; sh.speed = c.speed; sh.detection = detection;
-                sh.rgb = c.tower.getType().primaryRgb; sh.tag = c.tag; sh.buffed = buffed;
+                sh.rgb = c.tower.getType().primaryRgb; sh.tag = c.tag; sh.buffed = buffed; sh.onImpact = c.onImpact;
                 newProjectiles.add(new Projectile(sh));
             }
         }
@@ -334,6 +334,7 @@ public class Combat {
         Projectile.Shot sh = p.getShot();
         Tower t = sh.source;
         p.getHitIds().add(e.getId());
+        if (sh.onImpact != null) { sh.onImpact.impact(game, p, e); return; }
         if (sh.splash > 0) {
             int cap = sh.pierce > 1 ? sh.pierce : 999;
             areaHit(p.getPosition(), sh.splash, sh.hit, t, sh.damageMult, sh.extraDamage, cap, null, sh.detection, sh.buffed, p);
@@ -372,8 +373,50 @@ public class Combat {
         s.source = o.source; s.stats = o.stats; s.hit = o.hit; s.start = o.start; s.target = o.target;
         s.damageMult = o.damageMult; s.extraDamage = o.extraDamage; s.pierce = o.pierce; s.bounces = o.bounces;
         s.bounceRange = o.bounceRange; s.bounceSpeedGain = o.bounceSpeedGain; s.clones = o.clones; s.splash = o.splash;
-        s.speed = o.speed; s.detection = o.detection; s.rgb = o.rgb; s.tag = o.tag; s.buffed = o.buffed;
+        s.speed = o.speed; s.detection = o.detection; s.rgb = o.rgb; s.tag = o.tag; s.buffed = o.buffed; s.onImpact = o.onImpact;
         return s;
+    }
+
+    /**
+     * Applies a projectile's direct hit to one enemy, as the generic code does, with an extra damage scale (bounce
+     * falloff). Returns the applied context ({@code dealt}, {@code immune}). Used by custom impact handlers.
+     */
+    public HitContext projectileHit(Projectile p, Enemy e, double scale) {
+        Projectile.Shot sh = p.getShot();
+        HitContext h = new HitContext(e, sh.hit, sh.source);
+        h.mult = sh.damageMult * scale; h.extra = sh.extraDamage; h.fromAttack = sh.buffed; h.detection = sh.detection;
+        h.projectile = p; h.tag = sh.tag;
+        applyHit(h);
+        emit(VisualEvent.hit(e.getPosition(), sh.rgb));
+        return h;
+    }
+
+    /**
+     * Hits every enemy within {@code radius} of {@code center} (nearest first) that is not in {@code exclude}, and
+     * returns the applied contexts. When {@code record} is non-null every enemy touched is added to it, which is how
+     * custom projectiles guarantee that one projectile never damages the same enemy twice.
+     */
+    public List<HitContext> areaHits(Vec center, double radius, HitSpec hit, Tower source, double mult, double extra,
+                                     Set<Integer> exclude, Set<Integer> record, boolean detection, boolean fromAttack, Projectile via) {
+        List<Enemy> inRange = new ArrayList<>();
+        List<Enemy> pool = game.getEnemyManager().getGrid().near(center.x, center.y, radius, near);
+        for (int i = 0, n = pool.size(); i < n; i++) {
+            Enemy e = pool.get(i);
+            if (!e.isAlive() || e.isStored()) continue;
+            if (!e.getPosition().withinDist(center, radius + e.getRadius())) continue;
+            if (exclude != null && exclude.contains(e.getId())) continue;
+            inRange.add(e);
+        }
+        inRange.sort(Comparator.comparingDouble(e -> e.getPosition().distSq(center)));
+        List<HitContext> out = new ArrayList<>(inRange.size());
+        for (Enemy e : inRange) {
+            if (record != null) record.add(e.getId());
+            HitContext h = new HitContext(e, hit, source);
+            h.mult = mult; h.extra = extra; h.fromAttack = fromAttack; h.detection = detection; h.projectile = via;
+            applyHit(h);
+            out.add(h);
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------

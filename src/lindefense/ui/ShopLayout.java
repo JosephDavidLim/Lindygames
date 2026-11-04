@@ -9,9 +9,9 @@ import lindefense.tower.TowerType;
 /**
  * Pure-logic layout of the tower shop (no ACM dependency) so it can be unit
  * tested headlessly. Produces cell rectangles in logical coordinates for the
- * single-faction view and for the all-towers view (every purchasable tower in
- * one compact grid grouped by faction in spec order: Heroes, Primary, Military,
- * Magic, Support, Titans).
+ * single-faction view and for the all-towers view (every shop tower in one
+ * compact grid grouped by faction: Primary, Military, Magic, Support, Titans).
+ * Heroes are not sold here; they live in the separate Hero Store.
  */
 public final class ShopLayout {
     private ShopLayout() { }
@@ -55,7 +55,7 @@ public final class ShopLayout {
     public static List<Cell> factionCells(Faction f, double cardH) {
         List<Cell> cells = new ArrayList<>();
         int i = 0;
-        for (TowerType t : TowerType.purchasable()) {
+        for (TowerType t : TowerType.shopTowers()) {
             if (t.faction != f) continue;
             double cx = CARDS_X + (i % 2) * (CARD_W + CARD_GAP), cy = CARDS_Y + (i / 2) * (cardH + CARD_GAP);
             cells.add(new Cell(t, cx, cy, CARD_W, cardH, i == 0));
@@ -78,9 +78,9 @@ public final class ShopLayout {
         double gridX = CARDS_X + HEADER_W;
         double gridW = CARDS_W - HEADER_W;
         double cellW = gridW / ALL_MAX_COLS;
-        for (Faction f : Faction.values()) {
+        for (Faction f : shopFactions()) {
             List<TowerType> types = new ArrayList<>();
-            for (TowerType t : TowerType.purchasable()) if (t.faction == f) types.add(t);
+            for (TowerType t : TowerType.shopTowers()) if (t.faction == f) types.add(t);
             int n = types.size();
             for (int i = 0; i < n; i++) {
                 int row = i / ALL_MAX_COLS, col = i % ALL_MAX_COLS;
@@ -92,6 +92,13 @@ public final class ShopLayout {
             y += rows * (rowH + ALL_ROW_GAP) + ALL_GROUP_GAP - ALL_ROW_GAP;
         }
         return cells;
+    }
+
+    /** Factions shown as tower-shop tabs (every faction except the Hero Store's heroes). */
+    public static List<Faction> shopFactions() {
+        List<Faction> l = new ArrayList<>();
+        for (Faction f : Faction.values()) if (f != Faction.HERO) l.add(f);
+        return l;
     }
 
     /** Lowest edge of a set of cells (where the info panel may begin, plus a margin). */

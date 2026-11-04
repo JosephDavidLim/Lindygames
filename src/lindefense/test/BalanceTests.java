@@ -27,9 +27,9 @@ public final class BalanceTests {
 
     public static void runAll() {
         run("balance.hpNeverDecreases", BalanceTests::hpNeverDecreases);
-        run("balance.bradBeatsMoabNotBfb", BalanceTests::bradDuel);
+        run("balance.heroesCannotSoloLateBfb", BalanceTests::bradDuel);
         run("balance.noSoloBfb", BalanceTests::noSoloBfb);
-        run("balance.bradCostRanking", BalanceTests::costRanking);
+        run("balance.heroPrices", BalanceTests::costRanking);
         run("balance.everyTowerContributesLate", BalanceTests::everyTowerContributes);
         run("balance.abilityCooldownsInGameTime", BalanceTests::cooldownsInGameTime);
     }
@@ -61,6 +61,7 @@ public final class BalanceTests {
         double range = Math.min(TowerCatalog.get(type).baseStats.range, 400);
         Path r = g.getMap().getRoutes().get(0);
         g.addCash(1_000_000, null);   // so only geometry (not price) can reject a spot
+        for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);
         Vec best = null; int bestN = -1;
         for (int x = 30; x < GameMap.WIDTH; x += 15) for (int y = 30; y < GameMap.HEIGHT; y += 15) {
             Vec p = new Vec(x, y);
@@ -73,22 +74,14 @@ public final class BalanceTests {
     }
 
     private static void bradDuel() {
-        // base HP, then the HP actually met in the campaign: MOAB from wave 40 to 100, BFB from wave 60 to 99
-        int[] moabWaves = { 40, 60, 80, 100 }, bfbWaves = { 60, 70, 80, 90, 99 };
-        double moab0 = duel(TowerType.BRAD_LINDEMANN, EnemyType.BELLARMINE_COLLEGE_PREP), bfb0 = duel(TowerType.BRAD_LINDEMANN, EnemyType.SW_RESOURCE_CONSULTANT);
-        check(moab0 == 0, "base HP: Brad alone defeats a MOAB (HP left " + pct(moab0) + ")");
-        check(bfb0 > 0, "base HP: Brad alone does NOT defeat a BFB (HP left " + pct(bfb0) + ")");
-        StringBuilder sb = new StringBuilder("      Brad solo: base MOAB " + pct(moab0) + " BFB " + pct(bfb0) + " left; campaign MOAB");
-        for (int w : moabWaves) {
-            double left = duel(TowerType.BRAD_LINDEMANN, EnemyType.BELLARMINE_COLLEGE_PREP, lindefense.wave.WaveData.hpScale(w));
-            sb.append(" w").append(w).append('=').append(pct(left));
-            check(left == 0, "campaign wave " + w + ": Brad alone defeats a MOAB (HP left " + pct(left) + ")");
-        }
-        sb.append("; BFB");
-        for (int w : bfbWaves) {
-            double left = duel(TowerType.BRAD_LINDEMANN, EnemyType.SW_RESOURCE_CONSULTANT, lindefense.wave.WaveData.hpScale(w));
-            sb.append(" w").append(w).append('=').append(pct(left));
-            check(left > 0, "campaign wave " + w + ": Brad alone does NOT defeat a BFB (HP left " + pct(left) + ")");
+        // Hero Store heroes vs a lone boss (abilities used on cooldown): reported for tuning; no hero may solo a BFB
+        // at the HP it has on its last campaign appearance (wave 99), so towers stay necessary.
+        StringBuilder sb = new StringBuilder("      hero solo, HP left: MOAB(w40) / BFB(w99):");
+        for (TowerType h : TowerType.heroes()) {
+            double moab = duel(h, EnemyType.BELLARMINE_COLLEGE_PREP, lindefense.wave.WaveData.hpScale(40));
+            double bfb = duel(h, EnemyType.SW_RESOURCE_CONSULTANT, lindefense.wave.WaveData.hpScale(99));
+            sb.append(' ').append(h).append('=').append(pct(moab)).append('/').append(pct(bfb));
+            check(bfb > 0, h + " alone must not defeat a wave-99 BFB (HP left " + pct(bfb) + ")");
         }
         System.out.println(sb);
     }
@@ -118,15 +111,12 @@ public final class BalanceTests {
     private static String pct(double f) { return Math.round(f * 1000) / 10.0 + "%"; }
 
     private static void costRanking() {
-        int brad = TowerCatalog.get(TowerType.BRAD_LINDEMANN).totalCostForTier(3);
-        check(brad == 12_500, "Brad total is $12,500: " + brad);
-        int second = 0; TowerType which = null;
-        for (TowerType tt : TowerType.purchasable()) {
-            if (tt == TowerType.BRAD_LINDEMANN) continue;
-            int c = TowerCatalog.get(tt).totalCostForTier(3);
-            if (c > second) { second = c; which = tt; }
-        }
-        check(brad > 2 * second, "Brad ($" + brad + ") is more than twice the next most expensive tower (" + which + " $" + second + ")");
+        int[][] prices = { { 1800 }, { 1100 }, { 1300 }, { 1500 }, { 1000 }, { 1400 } };
+        TowerType[] heroes = { TowerType.BRAD_LINDEMANN, TowerType.BRANDON, TowerType.ROHAN, TowerType.RONIL, TowerType.SHASHANK, TowerType.OWEN };
+        for (int i = 0; i < heroes.length; i++) check(TowerCatalog.get(heroes[i]).unlockCost == prices[i][0], heroes[i] + " Hero Store price $" + prices[i][0]);
+        int brad = TowerCatalog.get(TowerType.BRAD_LINDEMANN).unlockCost;
+        for (TowerType h : TowerType.heroes()) if (h != TowerType.BRAD_LINDEMANN) check(brad > TowerCatalog.get(h).unlockCost, "Brad is the priciest hero (vs " + h + ")");
+        check(TowerCatalog.get(TowerType.ZETHOS).totalCost() == 5350, "Zethos fully upgraded costs $5,350");
     }
 
     private static void everyTowerContributes() {
@@ -156,13 +146,14 @@ public final class BalanceTests {
             if (!active) silent.add(t.getType());
         }
         System.out.println(sb);
-        check(build.size() == 20, "the mixed build has all 20 towers (" + build.size() + ")");
+        check(build.size() == TowerType.purchasable().length, "the mixed build has every tower and hero (" + build.size() + ")");
         check(silent.isEmpty(), "every tower contributed in waves 60+ (silent: " + silent + ")");
     }
 
     /** Places a fully upgraded tower on the free buildable spot nearest the shared kill zone (route distance 1500). */
     private static Tower forcePlaceBest(Game g, TowerType type) {
         g.addCash(1_000_000, null);
+        for (TowerType h : TowerType.heroes()) g.getHeroCollection().unlock(h);
         Vec zone = g.getMap().getRoutes().get(0).positionAt(1500);
         Vec best = null; double bestD = Double.MAX_VALUE;
         for (int x = 30; x < GameMap.WIDTH; x += 15) for (int y = 30; y < GameMap.HEIGHT; y += 15) {
@@ -176,7 +167,7 @@ public final class BalanceTests {
 
     private static void cooldownsInGameTime() {
         Game g = newGame(DUEL_MAP);
-        Tower t = forcePlace(g, TowerType.CLAUDE, bestSpot(g, TowerType.CLAUDE), 0);
+        Tower t = forcePlace(g, TowerType.ZETHOS, bestSpot(g, TowerType.ZETHOS), 0);
         double start = t.getAbilityCooldownRemaining();
         check(Math.abs(start - t.getAbility().cooldown * 0.5) < 1e-9, "starts at 50% cooldown");
         g.setSpeed(3);

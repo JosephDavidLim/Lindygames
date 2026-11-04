@@ -14,6 +14,19 @@ public class TowerStats {
     /** Range used for "entire map" (DeepSeek); larger than the map diagonal (1500 px). */
     public static final double UNLIMITED_RANGE = 2000;
 
+    /**
+     * World pixels per "map unit", the distance unit of the Hero Store / Zethos specification (ranges, radii and
+     * projectile speeds in map units and map units per second). 4 px keeps those characters' ranges (40-80 units =
+     * 160-320 px) in the same band as the rest of the roster (150-260 px).
+     */
+    public static final double MAP_UNIT = 4.0;
+
+    /** Converts map units to world pixels. */
+    public static double u(double mapUnits) { return mapUnits * MAP_UNIT; }
+
+    /** Converts world pixels to map units (for display). */
+    public static double toUnits(double px) { return px / MAP_UNIT; }
+
     public AttackKind kind = AttackKind.PROJECTILE;
     public HitSpec hit = new HitSpec();
     public double range = 150;

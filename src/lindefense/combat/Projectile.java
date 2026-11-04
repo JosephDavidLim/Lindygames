@@ -14,6 +14,15 @@ import lindefense.tower.TowerStats;
  * per bounce) and clone behaviour. Build one from a {@link Shot} and fire it with {@link Combat#fire(Shot)}.
  */
 public class Projectile {
+    /**
+     * Custom collision logic for one shot (hero and Zethos projectiles). When a shot has a handler, the combat engine
+     * records the enemy in {@link #getHitIds()} and hands the whole collision to it instead of the generic
+     * pierce / splash / bounce code; the handler decides damage, splash, pierce, bounces and when to {@link #kill()}.
+     */
+    public interface ImpactHandler {
+        void impact(Game game, Projectile p, Enemy e);
+    }
+
     /** Mutable description of a shot; every field has a sensible default derived from the tower's stats. */
     public static final class Shot {
         public Tower source;
@@ -38,6 +47,8 @@ public class Projectile {
         public String tag;
         /** Whether hits receive the source tower's buffed flat damage (companions/drones: false). */
         public boolean buffed = true;
+        /** Optional custom collision logic (see {@link ImpactHandler}); null = generic behaviour. */
+        public ImpactHandler onImpact;
 
         /** A shot for a tower with all values taken from its current stats and buffs. */
         public static Shot of(Game game, Tower t, Vec start, Enemy target) {
@@ -69,6 +80,10 @@ public class Projectile {
     /** Seconds spent without moving; a stalled projectile expires (fixes zero-velocity clones never ending a wave). */
     private double stalled;
     private final double size;
+    /** Bounces already taken. */
+    private int bounced;
+    /** Free-form marker for custom impact handlers (Zethos: 1 = the next collision is a bounce hit). */
+    public int handlerMark;
 
     public Projectile(Shot shot) {
         this.shot = shot;
@@ -109,9 +124,18 @@ public class Projectile {
         if (e != null) vel = e.getPosition().sub(pos).normalized().scale(speed);
     }
 
+    /** Restarts the travel budget (custom bounce handlers: each bounce gets a full flight). */
+    public void resetTravel() { travelled = 0; }
+
+    /** Number of bounces this projectile has already made. */
+    public int getBounced() { return bounced; }
+    /** Remaining pierce (direct hits left before the projectile is spent or starts bouncing). */
+    public int getPierceLeft() { return pierceLeft; }
+
     /** Uses up one bounce and applies the speed gain. */
     public void consumeBounce() {
         bouncesLeft--;
+        bounced++;
         speed *= 1 + shot.bounceSpeedGain;
     }
 

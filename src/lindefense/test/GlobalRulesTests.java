@@ -236,7 +236,7 @@ public final class GlobalRulesTests {
         check(Math.abs(gpt.buffTotal(BuffStat.RATE) - 0.55) < 1e-9, "different-type buffs add");
         check(Math.abs(gpt.effectiveRate(g) - base * 1.55) < 1e-9, "effective attack speed uses the summed buff");
         // caps
-        gpt.addAuraBuff(BuffStat.RATE, TowerType.BELLARMINE_STUDENT, 0.9);
+        gpt.addAuraBuff(BuffStat.RATE, TowerType.SHASHANK, 0.9);
         check(gpt.buffTotal(BuffStat.RATE) == 1.0 && Math.abs(gpt.effectiveRate(g) - base * 2) < 1e-9, "attack speed buff capped at +100%");
         gpt.addTimedBuff(BuffStat.PIERCE_FLAT, TowerType.COPILOT, 8, 5);
         gpt.addTimedBuff(BuffStat.PIERCE_FLAT, TowerType.BRAD_LINDEMANN, 6, 5);
@@ -250,18 +250,21 @@ public final class GlobalRulesTests {
         check(t2.buffTotal(BuffStat.RATE) == 1.0, "timed buff active");
         t2.tickTimers(g, 2.1);
         check(t2.buffTotal(BuffStat.RATE) == 0, "timed buff expired");
-        // real auras: two Copilots do not stack, Copilot + Brad do
+        // real auras: two Copilots do not stack; Copilot + Shashank's Resource Optimization (another source type) do
         Game g2 = newGame(0);
         Tower target = towerNearTrack(g2, TowerType.GPT, 0, 300);
         Tower c1 = forcePlace(g2, TowerType.COPILOT, buildableNear(g2, target.getPosition().add(new Vec(50, 0)), 80), 0);
         forcePlace(g2, TowerType.COPILOT, buildableNear(g2, target.getPosition().add(new Vec(-50, 0)), 80), 0);
         g2.getTowerManager().recomputeAuras();
         check(Math.abs(target.getAuraRateBonus() - 0.10) < 1e-9, "two Copilots give +10%, not +20%: " + target.getAuraRateBonus());
-        Tower brad = forcePlace(g2, TowerType.BRAD_LINDEMANN, buildableNear(g2, target.getPosition().add(new Vec(0, 70)), 100), 0);
+        Tower sha = forcePlace(g2, TowerType.SHASHANK, buildableNear(g2, target.getPosition().add(new Vec(0, 70)), 100), 0);
+        sha.resetAbilityCooldown();
+        check(g2.activateAbility(sha), "Resource Optimization fires");
         g2.getTowerManager().recomputeAuras();
-        check(brad != null && Math.abs(target.getAuraRateBonus() - 0.20) < 1e-9, "Copilot + Brad add: " + target.getAuraRateBonus());
+        check(Math.abs(target.getAuraRateBonus() - 0.30) < 1e-9, "Copilot + Shashank add: " + target.getAuraRateBonus());
         g2.sellTower(c1);
-        check(Math.abs(target.getAuraRateBonus() - 0.20) < 1e-9, "remaining Copilot + Brad still add");
+        g2.getTowerManager().recomputeAuras();
+        check(Math.abs(target.getAuraRateBonus() - 0.30) < 1e-9, "remaining Copilot + Shashank still add: " + target.getAuraRateBonus());
     }
 
     private static void targeting() {
@@ -297,7 +300,7 @@ public final class GlobalRulesTests {
 
     private static void camoDetection() {
         // built-in at base
-        EnumSet<TowerType> builtIn = EnumSet.of(TowerType.BELLARMINE_STUDENT_AI, TowerType.GROK, TowerType.PERPLEXITY);
+        EnumSet<TowerType> builtIn = EnumSet.of(TowerType.GROK, TowerType.PERPLEXITY);
         for (TowerType t : TowerType.purchasable()) {
             check(TowerCatalog.get(t).statsForTier(0).seesCamo == builtIn.contains(t), t + " base camo detection");
         }
@@ -309,7 +312,8 @@ public final class GlobalRulesTests {
         // nobody else ever gets it (Brad lost it)
         for (TowerType t : TowerType.purchasable()) {
             if (builtIn.contains(t) || t == TowerType.GEMINI || t == TowerType.LLAMA) continue;
-            check(!TowerCatalog.get(t).statsForTier(3).seesCamo, t + " has no camo detection");
+            TowerDef dd = TowerCatalog.get(t);
+            check(!dd.statsForTier(dd.upgrades.length).seesCamo, t + " has no camo detection");
         }
         // Perplexity radius grants detection; U1 grants it map-wide
         Game g = newGame(0);
@@ -328,8 +332,9 @@ public final class GlobalRulesTests {
 
     private static void factions() {
         Object[][] f = {
-            { TowerType.BELLARMINE_STUDENT, Faction.HERO }, { TowerType.BELLARMINE_STUDENT_AI, Faction.HERO }, { TowerType.BRAD_LINDEMANN, Faction.HERO },
-            { TowerType.GEMINI, Faction.PRIMARY }, { TowerType.CLAUDE, Faction.PRIMARY }, { TowerType.GPT, Faction.PRIMARY },
+            { TowerType.BRAD_LINDEMANN, Faction.HERO }, { TowerType.BRANDON, Faction.HERO }, { TowerType.ROHAN, Faction.HERO },
+            { TowerType.RONIL, Faction.HERO }, { TowerType.SHASHANK, Faction.HERO }, { TowerType.OWEN, Faction.HERO },
+            { TowerType.GEMINI, Faction.PRIMARY }, { TowerType.CLAUDE, Faction.PRIMARY }, { TowerType.GPT, Faction.PRIMARY }, { TowerType.ZETHOS, Faction.PRIMARY },
             { TowerType.DEEPSEEK, Faction.MILITARY }, { TowerType.COPILOT, Faction.MILITARY },
             { TowerType.DALLE, Faction.MAGIC }, { TowerType.SORA, Faction.MAGIC }, { TowerType.SUNO, Faction.MAGIC },
             { TowerType.GROK, Faction.SUPPORT }, { TowerType.PERPLEXITY, Faction.SUPPORT },
@@ -342,25 +347,26 @@ public final class GlobalRulesTests {
         Game g = newGame(0);
         g.addCash(100000, null);
         Vec p1 = buildableNear(g, new Vec(300, 300), 100);
+        Vec p2 = buildableNear(g, new Vec(600, 300), 100);
+        String locked = g.placementProblem(TowerType.BRAD_LINDEMANN, p1);
+        check(g.placeTower(TowerType.BRAD_LINDEMANN, p1) == null && locked != null && locked.contains("Hero Store"), "a locked hero cannot be placed: " + locked);
+        check(g.purchaseHero(TowerType.BRAD_LINDEMANN), "Brad bought in the Hero Store");
         Tower brad = g.placeTower(TowerType.BRAD_LINDEMANN, p1);
         check(brad != null, "first Brad placed");
-        Vec p2 = buildableNear(g, new Vec(600, 300), 100);
         check(g.placeTower(TowerType.BRAD_LINDEMANN, p2) == null, "second Brad refused");
         String why = g.placementProblem(TowerType.BRAD_LINDEMANN, p2);
-        check(why != null && why.contains("Only one Brad Lindemann"), "clear failure reason: " + why);
-        check(Shop.unavailableReason(g, TowerType.BRAD_LINDEMANN) != null && Shop.unavailableReason(g, TowerType.BRAD_LINDEMANN).contains("Only one"), "shop reason for the UI");
+        check(why != null && why.contains("already deployed"), "clear failure reason: " + why);
+        check(Shop.unavailableReason(g, TowerType.BRAD_LINDEMANN) != null, "shop reason for the UI");
         check(Shop.unavailableReason(g, TowerType.GPT) == null, "non-heroes are not limited");
-        check(g.placeTower(TowerType.BELLARMINE_STUDENT, p2) != null, "a different hero can be placed");
+        g.purchaseHero(TowerType.BRANDON);
+        check(g.placeTower(TowerType.BRANDON, p2) != null, "a different unlocked hero can be placed");
         check(g.placeTower(TowerType.GPT, buildableNear(g, new Vec(300, 600), 100)) != null && g.placeTower(TowerType.GPT, buildableNear(g, new Vec(500, 600), 100)) != null, "multiple copies of a normal tower are allowed");
-        double cash = g.getCash();
         g.sellTower(brad);
-        check(g.getCash() > cash && g.placeTower(TowerType.BRAD_LINDEMANN, p1) != null, "after selling, the hero can be placed again");
+        check(!brad.isAlive() && g.placeTower(TowerType.BRAD_LINDEMANN, p1) == null, "a dismissed hero cannot be redeployed in the same match");
     }
 
     private static void costTable() {
         Object[][] t = {
-            { TowerType.BELLARMINE_STUDENT, 550, 350, 600, 1100, 2600 }, { TowerType.BELLARMINE_STUDENT_AI, 800, 500, 850, 1500, 3650 },
-            { TowerType.BRAD_LINDEMANN, 2000, 1500, 3000, 6000, 12500 },
             { TowerType.GEMINI, 400, 650, 700, 1200, 2950 }, { TowerType.CLAUDE, 450, 550, 650, 1100, 2750 }, { TowerType.GPT, 500, 750, 800, 1300, 3350 },
             { TowerType.DEEPSEEK, 600, 850, 900, 1500, 3850 }, { TowerType.COPILOT, 350, 350, 600, 1000, 2300 },
             { TowerType.DALLE, 550, 500, 850, 1400, 3300 }, { TowerType.SORA, 700, 650, 1000, 1800, 4150 }, { TowerType.SUNO, 500, 500, 800, 1350, 3150 },
@@ -368,7 +374,7 @@ public final class GlobalRulesTests {
             { TowerType.QWEN, 750, 1100, 1200, 2000, 5050 }, { TowerType.LLAMA, 700, 1000, 1100, 1900, 4700 }, { TowerType.MISTRAL, 650, 650, 1050, 1750, 4100 },
             { TowerType.COHERE, 800, 800, 1300, 2200, 5100 }, { TowerType.GLM, 600, 550, 900, 1500, 3550 }, { TowerType.KIMI, 700, 700, 1150, 1950, 4500 },
             { TowerType.MINIMAX, 650, 1050, 1050, 1800, 4550 } };
-        check(t.length == 20, "table lists 20 towers");
+        check(t.length == 17, "table lists the 17 standard towers");
         for (Object[] r : t) {
             TowerDef d = TowerCatalog.get((TowerType) r[0]);
             check(d.baseCost == (Integer) r[1], r[0] + " base cost");
@@ -376,15 +382,17 @@ public final class GlobalRulesTests {
             int sum = d.baseCost + d.upgrades[0].cost + d.upgrades[1].cost + d.upgrades[2].cost;
             check(sum == (Integer) r[5] && d.totalCost() == (Integer) r[5], r[0] + " total $" + r[5] + " (got " + sum + ")");
         }
-        int brad = TowerCatalog.get(TowerType.BRAD_LINDEMANN).totalCost();
-        for (TowerType x : TowerType.purchasable()) if (x != TowerType.BRAD_LINDEMANN) check(brad > TowerCatalog.get(x).totalCost() * 2, "Brad total is far above " + x);
+        // Zethos: four upgrades, $5,350 fully upgraded
+        TowerDef z = TowerCatalog.get(TowerType.ZETHOS);
+        int[] zc = { 350, 650, 1200, 2500 };
+        check(z.baseCost == 650 && z.upgrades.length == 4, "Zethos $650 with four upgrades");
+        for (int i = 0; i < 4; i++) check(z.upgrades[i].cost == zc[i], "Zethos tier " + (i + 1) + " cost $" + zc[i]);
+        check(z.totalCost() == 5350, "Zethos fully upgraded total $5,350");
     }
 
     private static void tierNames() {
         String[][] names = {
-            { "Backpack Toss", "Textbook Smash", "Calculator Shield", "All-Nighter Aura" },
-            { "Copilot Assist", "Automated Essay", "Neural Backpack", "Autonomous Scholar" },
-            { "Megaphone Shouted Orders", "Discipline Field", "Tactical Megaphone", "Supreme Commander Strike" },
+            { "Quantum Pulse", "Quantum Acceleration", "Dimensional Fracture", "Quantum Singularity", "Zethos: Reality Engine" },
             { "Gemini 3.7 Flash", "Gemini 3.8 Flash", "Gemini 3.1 Pro", "Gemini 4 Argon" },
             { "Claude Haiku 5.5", "Claude Sonnet 5.5", "Claude Opus 5.5", "Claude Fable 5.1" },
             { "GPT-5.6 Terra", "GPT-6 Luna", "GPT-6 Astra", "GPT-6.1 Sol" },
@@ -392,7 +400,7 @@ public final class GlobalRulesTests {
             { "Qwen3.8 Flash", "Qwen3.6 Max", "Qwen3.7 Plus", "Qwen3.8 Max" },
             { "Llama 4 Scout", "Llama 4 Maverick", "Muse Glimmer", "Muse Wonder" },
             { "MiniMax M2.5", "MiniMax M2.7", "MiniMax M3", "MiniMax M3.1 Flash" } };
-        TowerType[] types = { TowerType.BELLARMINE_STUDENT, TowerType.BELLARMINE_STUDENT_AI, TowerType.BRAD_LINDEMANN, TowerType.GEMINI, TowerType.CLAUDE,
+        TowerType[] types = { TowerType.ZETHOS, TowerType.GEMINI, TowerType.CLAUDE,
             TowerType.GPT, TowerType.DEEPSEEK, TowerType.QWEN, TowerType.LLAMA, TowerType.MINIMAX };
         for (int i = 0; i < types.length; i++) check(Arrays.equals(TowerCatalog.get(types[i]).tierLabels, names[i]), types[i] + " tier labels " + Arrays.toString(TowerCatalog.get(types[i]).tierLabels));
         // family name is the display name, the nickname is the subtitle

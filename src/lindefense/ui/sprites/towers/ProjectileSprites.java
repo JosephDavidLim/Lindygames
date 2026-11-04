@@ -13,7 +13,7 @@ import lindefense.ui.sprites.towers.ProjectileSprite.Style;
  * Factory for projectile sprites and attack effects. Every tower type gets a
  * distinct projectile family matching its attack concept (Claude lances, Llama
  * kinetic wads, MiniMax bouncing orbs, Suno notes, Kimi sniper rounds, Brad
- * artillery shells, Student textbooks, ...) that scales up with tier.
+ * command-energy spheres, Ronil meteors, Zethos quantum diamonds, ...) that scales up with tier.
  */
 public final class ProjectileSprites {
     private ProjectileSprites() { }
@@ -68,9 +68,13 @@ public final class ProjectileSprites {
             case GLM: return new ProjectileSprite(Style.PULSE, tier, sz, pri, sec);
             case KIMI: return new ProjectileSprite(Style.ROUND, tier, sz, pri, sec);
             case MINIMAX: return new ProjectileSprite(Style.ORB, tier, sz, pri, sec);
-            case BELLARMINE_STUDENT: return new ProjectileSprite(Style.BOOK, tier, sz, Art.rgb(0xd9534f), sec);
-            case BELLARMINE_STUDENT_AI: return new ProjectileSprite(Style.SPARK, tier, sz, pri, sec);
-            case BRAD_LINDEMANN: return new ProjectileSprite(Style.SHELL, tier, sz, pri, sec);
+            case BRAD_LINDEMANN: return new ProjectileSprite(Style.COMMAND, 2, sz, pri, sec);
+            case BRANDON: return new ProjectileSprite(Style.VOLLEY, 0, sz, pri, sec);
+            case ROHAN: return new ProjectileSprite(Style.CRYO, 1, sz, pri, sec);
+            case RONIL: return new ProjectileSprite(Style.METEOR, 2, sz, pri, sec);
+            case SHASHANK: return new ProjectileSprite(Style.DATA, 0, sz, pri, sec);
+            case OWEN: return new ProjectileSprite(Style.DRONE, 0, sz, pri, sec);
+            case ZETHOS: return new ProjectileSprite(Style.QUANTUM, tier, sz, pri, sec);
             default: return new ProjectileSprite(Style.DOT, tier, sz, Art.rgb(rgb), Color.WHITE);
         }
     }
