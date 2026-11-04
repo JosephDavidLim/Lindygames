@@ -139,7 +139,7 @@ java  -cp build:lib/acm.jar lindefense.tools.AutoPlayer [maxWave] [mapIndex]   #
 
 | Input | Action |
 |---|---|
-| Shop card, then left-click on the map | Buy and place a tower (ghost shows range; green = valid, red = invalid with the reason) |
+| Shop card, then left-click on the map | Buy and place a tower (ghost shows range; cyan = valid, red with an X = invalid, with the reason) |
 | `B` / **ALL** button | Toggle the shop between one faction tab and a grid of all 20 towers grouped by faction (unaffordable towers are dimmed with a red price; hovering shows the shortfall). Clicking a faction tab leaves ALL mode |
 | Left-click a placed tower | Select it: stats, upgrade button, targeting, ability, sell |
 | Left-click an enemy | Inspect it (HP, speed, mechanic, modifiers) |
@@ -151,6 +151,7 @@ java  -cp build:lib/acm.jar lindefense.tools.AutoPlayer [maxWave] [mapIndex]   #
 | `S` | Sell the selected tower (70% refund) |
 | `A` | Fire the selected tower's ability |
 | `T` | Cycle targeting priority (First / Last / Strongest / Weakest / Closest) |
+| `H` / **? HELP** button | Open the in-game help overlay (full controls, modifiers, economy, bosses) |
 | **Auto** button | Auto-start the next wave 8 s after the current one is cleared |
 | **Menu** button | Back to the main menu |
 
@@ -248,10 +249,26 @@ src/lindefense/
   test/     HeadlessTests - verification suite run without a window
   tools/    DesignDocGenerator (DESIGN.md), AutoPlayer (balance bot)
 lib/acm.jar
+assets/fonts/                 bundled OFL fonts used by every UI label (see below)
 setup.sh                      one-shot setup: JDK check/install, acm.jar check, build + tests
 scripts/java-env.sh           picks a JDK 11-25 for the shell scripts (JDK 26+ removed JApplet)
 build.sh / run.sh / test.sh   (and .bat equivalents)
 ```
+
+### Bundled fonts
+
+So the UI looks identical on Windows, Linux and macOS, the game ships its own fonts in `assets/fonts/` and loads them at
+startup (`Font.createFont` + `registerFont`, resolved relative to the working directory, the build output directory or the
+classpath; a missing file falls back to a logical Java font). All are licensed under the SIL Open Font License 1.1; the
+license texts sit next to the font files.
+
+| Role | Font | License file |
+|---|---|---|
+| Techno display (headings, buttons, names) | Rajdhani (Indian Type Foundry) | `assets/fonts/OFL-rajdhani.txt` |
+| UI sans (paragraph text) | Barlow (Jeremy Tribby) | `assets/fonts/OFL-barlow.txt` |
+| Monospace (numbers, readouts) | IBM Plex Mono (IBM Corp.) | `assets/fonts/OFL-ibmplexmono.txt` |
+
+UI code gets fonts only through `Ui.display / Ui.mono / Ui.body` (backed by `ui/Cyber.java`).
 
 The simulation (`sim`, `map`, `enemy`, `tower`, `combat`, `wave`) has no dependency on ACM or AWT
 and runs headless; the `ui` package renders it.

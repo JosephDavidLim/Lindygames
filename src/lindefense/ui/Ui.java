@@ -24,30 +24,35 @@ public final class Ui {
     public static final int PANEL_X = 1200;
     public static final int PANEL_W = 400;
 
-    public static final Font F_TITLE = new Font("SansSerif", Font.BOLD, 64);
-    public static final Font F_H1 = new Font("SansSerif", Font.BOLD, 26);
-    public static final Font F_H2 = new Font("SansSerif", Font.BOLD, 18);
-    public static final Font F_BODY = new Font("SansSerif", Font.PLAIN, 14);
-    public static final Font F_BOLD = new Font("SansSerif", Font.BOLD, 14);
-    public static final Font F_SMALL = new Font("SansSerif", Font.PLAIN, 12);
-    public static final Font F_TINY = new Font("SansSerif", Font.PLAIN, 10);
+    public static final Font F_TITLE = Cyber.display(Font.BOLD, 64);
+    public static final Font F_H1 = Cyber.display(Font.BOLD, 28);
+    public static final Font F_H2 = Cyber.display(Font.BOLD, 20);
+    public static final Font F_BODY = Cyber.body(Font.PLAIN, 14);
+    public static final Font F_BOLD = Cyber.body(Font.BOLD, 14);
+    public static final Font F_SMALL = Cyber.body(Font.PLAIN, 12);
+    public static final Font F_TINY = Cyber.mono(Font.BOLD, 10);
 
-    public static final Color BG = new Color(0x0f1218);
-    public static final Color PANEL = new Color(0x171c26);
-    public static final Color PANEL_LIGHT = new Color(0x222a38);
-    public static final Color TEXT = new Color(0xe8ecf2);
-    public static final Color MUTED = new Color(0x97a3b6);
-    public static final Color ACCENT = new Color(0x7fd1ff);
-    public static final Color GOLD = new Color(0xffd166);
-    public static final Color GREEN = new Color(0x7fd8a8);
-    public static final Color RED = new Color(0xff5a5a);
+    public static final Color BG = Cyber.INK;
+    public static final Color PANEL = new Color(0x080d1e);
+    public static final Color PANEL_LIGHT = new Color(0x122038);
+    public static final Color TEXT = Cyber.TEXT;
+    public static final Color MUTED = Cyber.MUTED;
+    public static final Color ACCENT = Cyber.CYAN;
+    public static final Color GOLD = Cyber.YELLOW;
+    public static final Color GREEN = Cyber.GREEN;
+    public static final Color RED = Cyber.RED;
+
+    /** All UI fonts come from these three helpers (bundled OFL fonts, logical-font fallback). */
+    public static Font display(int style, int size) { return Cyber.display(style, size); }
+    public static Font mono(int style, int size) { return Cyber.mono(style, size); }
+    public static Font body(int style, int size) { return Cyber.body(style, size); }
 
     public static Color c(int rgb) { return new Color(rgb); }
     public static Color c(int rgb, int alpha) { return new Color((rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255, alpha); }
     public static Color withAlpha(Color col, int alpha) { return new Color(col.getRed(), col.getGreen(), col.getBlue(), alpha); }
 
     public static GLabel label(String text, double x, double y, Font f, Color col) {
-        GLabel l = new GLabel(text, x, y);
+        GLabel l = new Cyber.Text(text, x, y);
         l.setFont(f);
         l.setColor(col);
         return l;
@@ -71,7 +76,7 @@ public final class Ui {
     public static List<String> wrap(String text, Font f, double maxWidth) {
         List<String> lines = new ArrayList<>();
         if (text == null) return lines;
-        GLabel probe = new GLabel("");
+        GLabel probe = new Cyber.Text("");
         probe.setFont(f);
         StringBuilder cur = new StringBuilder();
         for (String word : text.split(" ")) {
@@ -88,7 +93,7 @@ public final class Ui {
         return lines;
     }
 
-    public static String money(double v) { return "$" + (long) Math.floor(v); }
+    public static String money(double v) { return Cyber.money(v); }
 
     public static String fmt(double v) {
         if (Math.abs(v - Math.rint(v)) < 1e-9) return String.valueOf((long) Math.rint(v));

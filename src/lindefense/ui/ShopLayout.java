@@ -33,25 +33,32 @@ public final class ShopLayout {
 
     /** Area available for cards inside the sidebar. */
     public static final double CARDS_X = Ui.PANEL_X + 8;
-    public static final double CARDS_Y = 72;
+    public static final double CARDS_Y = 82;
     public static final double CARDS_W = Ui.PANEL_W - 16;
-    /** Bottom of the card area (info panel begins below). */
-    public static final double CARDS_BOTTOM = 302;
+    /** Bottom of the card area for the tallest view (the info panel begins below the cards actually shown). */
+    public static final double CARDS_BOTTOM = 492;
 
     /** Width of the faction header column in the all-towers view. */
-    public static final double HEADER_W = 56;
-    public static final double ALL_ROW_H = 29;
-    public static final double ALL_ROW_GAP = 1;
-    public static final int ALL_MAX_COLS = 4;
+    public static final double HEADER_W = 50;
+    public static final double ALL_ROW_H = 46;
+    public static final double ALL_ROW_GAP = 3;
+    public static final double ALL_GROUP_GAP = 6;
+    public static final int ALL_MAX_COLS = 3;
 
-    /** Cells for the single-faction view: 2 columns of 190 x 56 cards. */
-    public static List<Cell> factionCells(Faction f) {
+    /** Faction-view card size. */
+    public static final double CARD_W = 190, CARD_H = 84, CARD_GAP = 4;
+
+    /** Cells for the single-faction view: 2 columns of 190 x 60 cards. */
+    public static List<Cell> factionCells(Faction f) { return factionCells(f, CARD_H); }
+
+    /** Faction view with a given card height (the shop grows when nothing is selected). */
+    public static List<Cell> factionCells(Faction f, double cardH) {
         List<Cell> cells = new ArrayList<>();
         int i = 0;
         for (TowerType t : TowerType.purchasable()) {
             if (t.faction != f) continue;
-            double cx = CARDS_X + (i % 2) * 194, cy = CARDS_Y + (i / 2) * 60;
-            cells.add(new Cell(t, cx, cy, 190, 56, i == 0));
+            double cx = CARDS_X + (i % 2) * (CARD_W + CARD_GAP), cy = CARDS_Y + (i / 2) * (cardH + CARD_GAP);
+            cells.add(new Cell(t, cx, cy, CARD_W, cardH, i == 0));
             i++;
         }
         return cells;
@@ -59,30 +66,39 @@ public final class ShopLayout {
 
     /**
      * Cells for the all-towers view: one row group per faction (Titans wrap to
-     * two rows), each row sharing the width after a header column. Fits in the
-     * card area without scrolling.
+     * three rows), every row using the same three equal columns after a header
+     * column. Fits in the card area without scrolling.
      */
-    public static List<Cell> allCells() {
+    public static List<Cell> allCells() { return allCells(ALL_ROW_H); }
+
+    /** All-towers view with a given cell height. */
+    public static List<Cell> allCells(double rowH) {
         List<Cell> cells = new ArrayList<>();
         double y = CARDS_Y;
         double gridX = CARDS_X + HEADER_W;
         double gridW = CARDS_W - HEADER_W;
+        double cellW = gridW / ALL_MAX_COLS;
         for (Faction f : Faction.values()) {
             List<TowerType> types = new ArrayList<>();
             for (TowerType t : TowerType.purchasable()) if (t.faction == f) types.add(t);
             int n = types.size();
-            int cols = Math.min(n, ALL_MAX_COLS);
-            double cellW = gridW / cols;
             for (int i = 0; i < n; i++) {
-                int row = i / cols, col = i % cols;
+                int row = i / ALL_MAX_COLS, col = i % ALL_MAX_COLS;
                 double cx = gridX + col * cellW;
-                double cy = y + row * (ALL_ROW_H + ALL_ROW_GAP);
-                cells.add(new Cell(types.get(i), cx + 1, cy, cellW - 2, ALL_ROW_H, i == 0));
+                double cy = y + row * (rowH + ALL_ROW_GAP);
+                cells.add(new Cell(types.get(i), cx + 1, cy, cellW - 2, rowH, i == 0));
             }
-            int rows = (n + cols - 1) / cols;
-            y += rows * (ALL_ROW_H + ALL_ROW_GAP) + 2;
+            int rows = (n + ALL_MAX_COLS - 1) / ALL_MAX_COLS;
+            y += rows * (rowH + ALL_ROW_GAP) + ALL_GROUP_GAP - ALL_ROW_GAP;
         }
         return cells;
+    }
+
+    /** Lowest edge of a set of cells (where the info panel may begin, plus a margin). */
+    public static double bottom(List<Cell> cells) {
+        double b = CARDS_Y;
+        for (Cell c : cells) b = Math.max(b, c.y + c.h);
+        return b;
     }
 
     /** Height used by the all-towers grid. */

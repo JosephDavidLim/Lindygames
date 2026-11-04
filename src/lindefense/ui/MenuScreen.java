@@ -9,7 +9,6 @@ import acm.graphics.GPolygon;
 import acm.graphics.GRect;
 import java.awt.Color;
 import java.awt.Font;
-import java.awt.GraphicsEnvironment;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -35,7 +34,7 @@ public final class MenuScreen extends GCompound {
     private static final int GRID_ROWS = 14;
     private static final int RAIN_COLUMNS = 34;
     private static final int RAIN_LEN = 9;
-    private static final String GLYPHS = "01010110ABCDEF{}[]<>->λ∑#$%&*+=/;:";
+    private static final String GLYPHS = "01010110ABCDEF{}[]<>->∑#$%&*+=/;:";
 
     private final Random rnd = new Random(7);
     private final List<NeonButton> buttons = new ArrayList<>();
@@ -135,8 +134,8 @@ public final class MenuScreen extends GCompound {
         scanBar = Ui.rect(0, -120, Ui.W, 90, Ui.withAlpha(Color.WHITE, 9), Ui.withAlpha(Color.WHITE, 0));
         add(scanBar);
         buildBrackets();
-        Font mono = new Font(Font.MONOSPACED, Font.BOLD, 14);
-        sysLabel = Ui.label("SYS.ONLINE  ■", 44, 52, mono, new Color(0x3bff8a));
+        Font mono = Cyber.mono(Font.BOLD, 14);
+        sysLabel = Ui.label("SYS.ONLINE  •", 44, 52, mono, new Color(0x3bff8a));
         threatLabel = Ui.label("THREAT LVL: PALANTIR", 44, Ui.H - 40, mono, MAGENTA);
         verLabel = Ui.label("v0.1 ALPHA", Ui.W - 150, 52, mono, YELLOW);
         tickerLabel = Ui.label("LINDEFENSE // 100 WAVES // 20 MODELS // 4 MAPS", 0, Ui.H - 40, mono, Ui.withAlpha(CYAN, 200));
@@ -157,10 +156,7 @@ public final class MenuScreen extends GCompound {
     // ------------------------------------------------------------------ construction helpers
     /** Font fallback chain for small text. */
     static Font menuFont(int style, int size) {
-        String[] prefer = { "Avenir Next Condensed", "Futura", "Orbitron", "Eurostile" };
-        String[] avail = GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames();
-        for (String p : prefer) for (String a : avail) if (a.equalsIgnoreCase(p)) return new Font(a, style, size);
-        return new Font(Font.SANS_SERIF, style, size);
+        return Cyber.display(style, size);
     }
 
     private static String spaced(String s) {
@@ -172,9 +168,9 @@ public final class MenuScreen extends GCompound {
     private void buildRain() {
         for (int c = 0; c < RAIN_COLUMNS; c++) {
             GCompound col = new GCompound();
-            Font f = new Font(Font.MONOSPACED, Font.PLAIN, 13);
+            Font f = Cyber.mono(Font.PLAIN, 13);
             for (int k = 0; k < RAIN_LEN; k++) {
-                GLabel g = new GLabel(String.valueOf(GLYPHS.charAt(rnd.nextInt(GLYPHS.length()))), 0, k * 16);
+                GLabel g = new Cyber.Text(String.valueOf(GLYPHS.charAt(rnd.nextInt(GLYPHS.length()))), 0, k * 16);
                 g.setFont(f);
                 int a = k == RAIN_LEN - 1 ? 150 : 25 + k * 9;
                 g.setColor(Ui.withAlpha(k == RAIN_LEN - 1 ? Color.WHITE : (c % 3 == 0 ? MAGENTA : CYAN), a));
@@ -266,14 +262,14 @@ public final class MenuScreen extends GCompound {
         double y = 146, x = Ui.W / 2.0 - 410;
         String[][] sections = {
             { "GOAL", "Survive all 100 waves and destroy Palantir, the BAD-class final boss, on Wave 100. You start with $650 and 100 lives." },
-            { "BUILDING", "Pick a faction tab (or press B for all towers), click a tower, then click a free spot beside the track. Each tower has 4 upgrades named after its model lineup (the 4th is an expensive superclass form), an active ability with a cooldown, and 5 targeting priorities." },
+            { "BUILDING", "Pick a faction tab (or press B for all towers), click a tower, then click a free spot beside the track. Each tower has an upgrade path named after its model lineup, an active ability with a cooldown, and several targeting priorities." },
             { "ECONOMY", "Enemies pay cash when destroyed; every wave pays a bonus. Perplexity earns research income. Selling refunds 70% of everything spent on a tower." },
             { "ENEMIES", "Data structures and sorting algorithms, each with a mechanic: Bubble Sort swaps places, Heap Sort shields allies and is Physical-immune, Merge/Quick/Counting/TimSort split, Bucket Sort stores weaker enemies, Radix Sort changes armour, Shell Sort gap-jumps." },
             { "MODIFIERS", "Camo enemies need detection (Perplexity, Bellarmine Student + AI, or Brad T3). Regrow enemies heal. Fortified enemies have double HP (Qwen strips it)." },
             { "BOSSES", "Bellarmine College Prep (MOAB, wave 40), SW Resource Consultant (BFB, 60), 3Com (ZOMG, 80), Lockheed Martin (DDT, 90) and Palantir (BAD, 100), whose Predictive Surveillance disrupts your strongest towers - telegraphed for 3 s, blocked by Perplexity/Copilot/Student+AI/Brad auras, cleared by Brad's Command Override." },
-            { "CONTROLS", "Space: next wave.  1/2/3: speed.  P: pause.  B: all towers.  Esc / right-click: cancel.  U: upgrade.  S: sell.  A: ability.  T: targeting." },
+            { "CONTROLS", "Space: next wave.  1/2/3: speed.  P: pause.  B: all towers.  Esc / right-click: cancel.  U: upgrade.  S: sell.  A: ability.  T: targeting.  H: in-game help." },
         };
-        Font hf = menuFont(Font.BOLD, 18), bf = new Font(Font.SANS_SERIF, Font.PLAIN, 14);
+        Font hf = menuFont(Font.BOLD, 18), bf = Cyber.body(Font.PLAIN, 14);
         for (String[] s : sections) {
             y += 26;
             help.add(Ui.label(s[0], x, y, hf, CYAN));

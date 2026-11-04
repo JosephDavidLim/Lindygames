@@ -35,7 +35,13 @@ final class DemoDriver {
         this.app = app;
         this.out = new File(dir);
         out.mkdirs();
-        double[] times = { 2.6, 2.8, 3.8, 4.0, 10.0, 10.5, 12.0, 12.5, 14.0, 14.5, 16.0, 18.5, 19.0, 10.2, 10.4, 0.5, 1.6, 1.9, 2.2, 2.5 };
+        // index -> time (seconds) of each scripted step
+        double[] times = new double[36];
+        double[][] sched = { { 0, 2.6 }, { 1, 2.8 }, { 2, 3.8 }, { 3, 4.0 }, { 4, 10.0 }, { 5, 11.5 }, { 6, 13.0 }, { 7, 13.5 }, { 8, 15.0 }, { 9, 15.5 },
+            { 10, 17.0 }, { 11, 19.5 }, { 12, 26.6 }, { 13, 10.2 }, { 14, 10.4 }, { 15, 0.5 }, { 16, 1.6 }, { 17, 1.9 }, { 18, 2.2 }, { 19, 2.5 },
+            { 20, 10.5 }, { 21, 10.7 }, { 22, 10.9 }, { 23, 11.1 }, { 24, 11.3 }, { 25, 19.7 }, { 26, 20.0 }, { 27, 20.1 }, { 28, 20.4 }, { 29, 20.7 },
+            { 30, 20.8 }, { 31, 23.4 }, { 32, 23.6 }, { 33, 23.7 }, { 34, 25.8 }, { 35, 11.35 } };
+        for (double[] sc : sched) times[(int) sc[0]] = sc[1];
         for (int i = 0; i < times.length; i++) steps.add(new double[] { times[i], i });
         steps.sort((a, b) -> Double.compare(a[0], b[0]));
     }
@@ -122,6 +128,95 @@ final class DemoDriver {
             case 17: { snap("00b_menu_small"); resize(2400, 1400); break; }
             case 18: { snap("00c_menu_large"); resize(1600, 1028); break; }
             case 19: { app.mouseMoved(pixelEvent(Ui.W / 2.0, 528)); break; }
+            case 20: {
+                // busy late wave: ~100 damaged enemies across all lanes
+                Game g = app.getGame();
+                EnemyType[] ts = { EnemyType.PRIMITIVE_VARIABLE, EnemyType.STATIC_ARRAY, EnemyType.DYNAMIC_ARRAY, EnemyType.BUBBLE_SORT, EnemyType.MERGE_SORT,
+                    EnemyType.QUICK_SORT, EnemyType.HEAP_SORT, EnemyType.SHELL_SORT, EnemyType.TIMSORT, EnemyType.RADIX_SORT };
+                int routes = g.getMap().getRoutes().size();
+                for (int i = 0; i < 100; i++) {
+                    lindefense.enemy.Enemy e = g.getEnemyManager().spawn(ts[i % ts.length], null, i % routes, 40 + i * 9);
+                    if (e != null && i % 3 != 0) e.takeDamage(e.getMaxHp() * (0.12 + 0.75 * ((i * 37) % 100) / 100.0), g.getTime());
+                }
+                break;
+            }
+            case 21: snap("03c_busy_wave"); break;
+            case 22: {
+                // placement ghost on the track (invalid)
+                app.getGameScreen().beginPlacing(TowerType.CLAUDE);
+                Vec wp = app.getGame().getMap().getRoutes().get(0).getWaypoints().get(2);
+                app.mouseMoved(pixelEvent(wp.x + Ui.WORLD_X, wp.y + Ui.WORLD_Y));
+                app.getGameScreen().frame(0.01);
+                snap("03d_placing_invalid");
+                break;
+            }
+            case 23: {
+                // placement ghost on a valid spot
+                Game g = app.getGame();
+                outer:
+                for (int yy = 100; yy < 800; yy += 20) for (int xx = 100; xx < 1100; xx += 20) {
+                    Vec v = new Vec(xx, yy);
+                    if (g.getTowerManager().placementProblem(TowerType.CLAUDE, v) == null) {
+                        app.mouseMoved(pixelEvent(v.x + Ui.WORLD_X, v.y + Ui.WORLD_Y));
+                        break outer;
+                    }
+                }
+                app.getGameScreen().frame(0.01);
+                snap("03e_placing_valid");
+                app.getGameScreen().beginPlacing(null);
+                app.getGameScreen().selectTower(null);
+                app.mouseMoved(pixelEvent(700 + Ui.WORLD_X, 250 + Ui.WORLD_Y));
+                break;
+            }
+            case 24: snap("03f_hover_nameplate"); app.mouseMoved(pixelEvent(5, 5)); break;
+            case 25: {
+                Game g = app.getGame();
+                EnemyType[] bs = { EnemyType.BELLARMINE_COLLEGE_PREP, EnemyType.SW_RESOURCE_CONSULTANT, EnemyType.THREE_COM, EnemyType.LOCKHEED_MARTIN };
+                for (int i = 0; i < bs.length; i++) {
+                    lindefense.enemy.Enemy e = g.getEnemyManager().spawn(bs[i], null, 0, 250 + i * 160);
+                    if (e != null) e.takeDamage(e.getMaxHp() * (0.1 + 0.15 * i), g.getTime());
+                }
+                if (g.getPalantir() != null) g.getPalantir().takeDamage(g.getPalantir().getMaxHp() * 0.3, g.getTime());
+                break;
+            }
+            case 26: snap("06b_multi_boss"); break;
+            case 27: app.getGame().setPaused(true); break;
+            case 28: {
+                snap("07_paused");
+                Game g = app.getGame();
+                g.setPaused(false);
+                if (g.getPalantir() != null) g.loseLives(Math.max(0, g.getLives() - 18), g.getPalantir());
+                break;
+            }
+            case 29: snap("06c_low_lives"); break;
+            case 30: {
+                Game g = app.getGame();
+                if (g.getPalantir() != null) g.getPalantir().takeDamage(1e12, g.getTime());
+                g.setSpeed(3);
+                break;
+            }
+            case 31: snap("08_victory"); break;
+            case 32: app.startGame(0); break;
+            case 33: {
+                Game g = app.getGame();
+                lindefense.enemy.Enemy e = g.getEnemyManager().spawn(EnemyType.STATIC_ARRAY, null, 0, 100);
+                g.loseLives(g.getLives(), e);
+                g.setSpeed(3);
+                break;
+            }
+            case 34: snap("09_defeat"); break;
+            case 35: {
+                GameScreen gs = app.getGameScreen();
+                gs.toggleShopAll();
+                gs.frame(0.01); gs.frame(0.01);
+                snap("03g_shop_all_idle");
+                gs.toggleShopAll();
+                gs.toggleHelp();
+                gs.frame(0.01);
+                snap("03h_help_overlay");
+                gs.toggleHelp();
+                break;
+            }
             case 12: {
                 for (String r : results) System.out.println(r);
                 System.out.println("DEMO DONE");

@@ -131,7 +131,7 @@ public class LindefenseProgram extends GraphicsProgram {
             int n = 128;
             java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(n, n, java.awt.image.BufferedImage.TYPE_INT_ARGB);
             java.awt.Graphics2D g2 = img.createGraphics();
-            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            Cyber.quality(g2);
             g2.translate(n / 2.0, n / 2.0);
             LogoEmblem e = new LogoEmblem(n * 0.9);
             e.animate(0.4);

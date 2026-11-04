@@ -8,6 +8,9 @@ import acm.graphics.GOval;
 import acm.graphics.GPolygon;
 import acm.graphics.GRect;
 import java.awt.Color;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -56,20 +59,19 @@ public final class WorldView extends GCompound {
     private final GCompound projectileLayer = new GCompound();
     private final GCompound effectLayer = new GCompound();
     private final GCompound overlay = new GCompound();
-    private final GCompound bossLayer = new GCompound();
 
     private final Map<Tower, TowerSprite> towerSprites = new HashMap<>();
     private final Map<Enemy, EnemySprite> enemySprites = new HashMap<>();
-    private final Map<Enemy, GRect[]> hpBars = new HashMap<>();
+    private final Map<Enemy, Cyber.Bar> hpBars = new HashMap<>();
     private final Map<Projectile, ProjectileSprite> projectileSprites = new HashMap<>();
     private final List<Effect> effects = new ArrayList<>();
     private final List<Animated> animated = new ArrayList<>();
     private final List<GObject> telegraphLines = new ArrayList<>();
-    private final List<GObject> bossBarObjects = new ArrayList<>();
-    private final List<Boss> bossBarOrder = new ArrayList<>();
 
-    private GOval rangeCircle, ghost, ghostRange;
-    private GLabel ghostLabel;
+    private Cyber.Ring rangeCircle, ghost, ghostRange;
+    private GLine ghostX1, ghostX2;
+    private Nameplate ghostPlate, hoverPlate, selectPlate;
+    private double viewScale = 1, viewDock;
     private final List<GOval> padFill = new ArrayList<>();
     private GRect ventRect;
     private GRect stormRect;
@@ -80,7 +82,7 @@ public final class WorldView extends GCompound {
         this.screen = screen;
         this.game = screen.getGame();
         this.map = game.getMap();
-        setLocation(Ui.WORLD_X, Ui.WORLD_Y);
+        setLocation(0, 0);
         buildBackground();
         add(background);
         add(mapFx);
@@ -90,7 +92,6 @@ public final class WorldView extends GCompound {
         add(projectileLayer);
         add(effectLayer);
         add(overlay);
-        add(bossLayer);
         buildOverlay();
     }
 
@@ -118,12 +119,8 @@ public final class WorldView extends GCompound {
             for (Vec p : w) background.add(Ui.oval(p.x - hw, p.y - hw, 2 * hw, 2 * hw, track, track));
             Color center = Ui.withAlpha(Ui.c(0xffffff), 60);
             for (int i = 0; i + 1 < w.size(); i++) { GLine l = new GLine(w.get(i).x, w.get(i).y, w.get(i + 1).x, w.get(i + 1).y); l.setColor(center); background.add(l); }
-            Vec s = r.getStart(), e = r.getEnd();
-            background.add(Ui.oval(s.x - 16, s.y - 16, 32, 32, Ui.c(0x7fd8a8, 200), Ui.c(0xffffff)));
-            GLabel in = Ui.label("IN", s.x - 8, s.y + 5, Ui.F_BOLD, Ui.c(0x0b0e14));
-            background.add(in);
-            background.add(Ui.oval(e.x - 16, e.y - 16, 32, 32, Ui.c(0xff5a5a, 200), Ui.c(0xffffff)));
-            background.add(Ui.label("OUT", e.x - 14, e.y + 5, Ui.F_SMALL, Ui.c(0x0b0e14)));
+            addMarker(r.getStart(), w.get(1).sub(w.get(0)).normalized(), Cyber.GREEN, "IN");
+            addMarker(r.getEnd(), w.get(w.size() - 1).sub(w.get(w.size() - 2)).normalized(), Cyber.RED, "OUT");
         }
         if (map instanceof SiliconCircuit) {
             for (Vec p : ((SiliconCircuit) map).getPads()) {
@@ -144,6 +141,29 @@ public final class WorldView extends GCompound {
         }
     }
 
+    /** Track entry / exit marker: a ringed chevron inset from the world edge so it is never clipped. */
+    private void addMarker(Vec at, Vec dir, Color col, String text) {
+        double m = 26;
+        double px = Math.max(m, Math.min(GameMap.WIDTH - m, at.x)), py = Math.max(m, Math.min(GameMap.HEIGHT - m, at.y));
+        Cyber.Ring ring = new Cyber.Ring(px - 15, py - 15, 30, 30, Cyber.alpha(col, 70), Cyber.alpha(col, 235));
+        ring.setLineWidth(2);
+        background.add(ring);
+        Vec n = new Vec(-dir.y, dir.x);
+        GPolygon chev = new GPolygon();
+        chev.addVertex(px + dir.x * 8, py + dir.y * 8);
+        chev.addVertex(px - dir.x * 1 + n.x * 8, py - dir.y * 1 + n.y * 8);
+        chev.addVertex(px - dir.x * 1 + n.x * 4, py - dir.y * 1 + n.y * 4);
+        chev.addVertex(px + dir.x * 3, py + dir.y * 3);
+        chev.addVertex(px - dir.x * 1 - n.x * 4, py - dir.y * 1 - n.y * 4);
+        chev.addVertex(px - dir.x * 1 - n.x * 8, py - dir.y * 1 - n.y * 8);
+        chev.setFilled(true); chev.setFillColor(col); chev.setColor(col);
+        background.add(chev);
+        GLabel l = Ui.label(text, 0, 0, Cyber.mono(Font.BOLD, 11), col);
+        double ly = py + 31 < GameMap.HEIGHT - 4 ? py + 31 : py - 21;
+        l.setLocation(px - l.getWidth() / 2, ly);
+        background.add(l);
+    }
+
     private GPolygon segment(Vec a, Vec b, double hw, Color col) {
         Vec d = b.sub(a).normalized();
         Vec n = new Vec(-d.y * hw, d.x * hw);
@@ -157,18 +177,24 @@ public final class WorldView extends GCompound {
     }
 
     private void buildOverlay() {
-        rangeCircle = Ui.oval(0, 0, 10, 10, Ui.c(0xffffff, 28), Ui.c(0xffffff, 140));
+        rangeCircle = new Cyber.Ring(0, 0, 10, 10, Cyber.alpha(Cyber.CYAN, 22), Cyber.alpha(Cyber.CYAN, 215));
         rangeCircle.setVisible(false);
         overlay.add(rangeCircle);
-        ghostRange = Ui.oval(0, 0, 10, 10, Ui.c(0x7fd8a8, 28), Ui.c(0x7fd8a8, 160));
+        ghostRange = new Cyber.Ring(0, 0, 10, 10, Cyber.alpha(Cyber.CYAN, 22), Cyber.alpha(Cyber.CYAN, 215));
         ghostRange.setVisible(false);
         overlay.add(ghostRange);
-        ghost = Ui.oval(0, 0, 40, 40, Ui.c(0x7fd8a8, 120), Ui.c(0xffffff));
+        ghost = new Cyber.Ring(0, 0, 40, 40, Cyber.alpha(Cyber.CYAN, 90), Cyber.CYAN);
+        ghost.setLineWidth(2.2);
         ghost.setVisible(false);
         overlay.add(ghost);
-        ghostLabel = Ui.label("", 0, 0, Ui.F_SMALL, Ui.TEXT);
-        ghostLabel.setVisible(false);
-        overlay.add(ghostLabel);
+        ghostX1 = new GLine(0, 0, 1, 1); ghostX2 = new GLine(0, 0, 1, 1);
+        ghostX1.setColor(Cyber.RED); ghostX2.setColor(Cyber.RED);
+        ghostX1.setVisible(false); ghostX2.setVisible(false);
+        overlay.add(ghostX1); overlay.add(ghostX2);
+        hoverPlate = new Nameplate();
+        selectPlate = new Nameplate();
+        ghostPlate = new Nameplate();
+        overlay.add(hoverPlate); overlay.add(selectPlate); overlay.add(ghostPlate);
     }
 
     // ------------------------------------------------------------------ per frame
@@ -180,7 +206,6 @@ public final class WorldView extends GCompound {
         consumeEvents();
         stepEffects(dt);
         syncMapFx();
-        syncBossBars();
         syncOverlay();
     }
 
@@ -222,22 +247,7 @@ public final class WorldView extends GCompound {
             }
             s.sync(e, time);
             s.step(dt);
-            if (e.getMaxHp() >= 4 || e.isBoss()) {
-                GRect[] bar = hpBars.get(e);
-                double w = Math.max(18, e.getRadius() * 2.2);
-                if (bar == null) {
-                    bar = new GRect[] { Ui.rect(0, 0, w, 4, Ui.c(0x000000, 170), null), Ui.rect(0, 0, w, 4, Ui.GREEN, null) };
-                    hpLayer.add(bar[0]); hpLayer.add(bar[1]);
-                    hpBars.put(e, bar);
-                }
-                double x = e.getPosition().x - w / 2, y = e.getPosition().y - e.getRadius() - 9;
-                bar[0].setLocation(x, y);
-                bar[1].setLocation(x, y);
-                double f = e.getHpFraction();
-                bar[1].setSize(Math.max(0.5, w * f), 4);
-                bar[1].setFillColor(f > 0.5 ? Ui.GREEN : f > 0.25 ? Ui.GOLD : Ui.RED);
-                bar[1].setColor(bar[1].getFillColor());
-            }
+            syncHpBar(e);
         }
         Iterator<Map.Entry<Enemy, EnemySprite>> it = enemySprites.entrySet().iterator();
         while (it.hasNext()) {
@@ -246,14 +256,38 @@ public final class WorldView extends GCompound {
             if (!e.isAlive() || e.isStored()) {
                 enemyLayer.remove(en.getValue());
                 it.remove();
-                GRect[] bar = hpBars.remove(e);
-                if (bar != null) { hpLayer.remove(bar[0]); hpLayer.remove(bar[1]); }
+                Cyber.Bar bar = hpBars.remove(e);
+                if (bar != null) hpLayer.remove(bar);
                 if (!e.isAlive() && !e.hasLeaked() && animated.size() < MAX_EFFECTS) {
                     Animated fx = e.getType().hasChildren() ? SpriteFactory.createSplitEffect(e) : SpriteFactory.createDeathEffect(e);
                     if (fx instanceof GObject) { effectLayer.add((GObject) fx); animated.add(fx); }
                 }
             }
         }
+    }
+
+    /** Compact HP bar centred just above a damaged, non-boss enemy; created lazily, mutated every frame. */
+    private void syncHpBar(Enemy e) {
+        boolean show = !e.isBoss() && e.isAlive() && e.getHp() < e.getMaxHp() - 1e-9;
+        Cyber.Bar bar = hpBars.get(e);
+        if (!show) {
+            if (bar != null) bar.setVisible(false);
+            return;
+        }
+        double r = e.getRadius();
+        double w = Math.max(16, Math.min(48, r * 2.0 + 4));
+        double h = r > 14 ? 5 : 4;
+        if (bar == null) {
+            bar = new Cyber.Bar(0, 0, w, h, 0).colors(Cyber.GREEN, new Color(4, 6, 14, 215), new Color(0, 0, 0, 235));
+            hpLayer.add(bar);
+            hpBars.put(e, bar);
+        }
+        double f = e.getHpFraction();
+        bar.setSize(w, h);
+        bar.setLocation(e.getPosition().x - w / 2, e.getPosition().y - r - h - 6);
+        bar.setValue(f);
+        bar.setFill(Cyber.hpColor(f));
+        bar.setVisible(true);
     }
 
     private void syncProjectiles() {
@@ -307,7 +341,7 @@ public final class WorldView extends GCompound {
                     o = Ui.oval(ev.a.x - 4, ev.a.y - 4, 8, 8, ev.kind == VisualEvent.Kind.EXPLOSION ? Ui.withAlpha(col, 90) : null, col);
                     break;
                 case TEXT: {
-                    GLabel l = Ui.label(ev.text, ev.a.x, ev.a.y, Ui.F_BOLD, col);
+                    GLabel l = Ui.label(ev.text, ev.a.x, ev.a.y, Cyber.mono(Font.BOLD, 13), col);
                     l.setLocation(ev.a.x - l.getWidth() / 2, ev.a.y);
                     o = l;
                     break;
@@ -316,7 +350,7 @@ public final class WorldView extends GCompound {
                 default: break;
             }
             if (ev.kind == VisualEvent.Kind.PHASE) {
-                GLabel l = Ui.label(ev.text, ev.a.x, ev.a.y - 60, Ui.F_H1, col);
+                GLabel l = Ui.label(ev.text, ev.a.x, ev.a.y - 60, Cyber.display(Font.BOLD, 36), col);
                 l.setLocation(ev.a.x - l.getWidth() / 2, ev.a.y - 60);
                 effectLayer.add(l);
                 effects.add(new Effect(l, VisualEvent.text(ev.a, ev.text, ev.rgb), col));
@@ -388,84 +422,93 @@ public final class WorldView extends GCompound {
         }
     }
 
-    private void syncBossBars() {
-        List<Boss> bosses = game.getActiveBosses();
-        if (bosses.size() > 4) bosses = bosses.subList(0, 4);
-        if (!bosses.equals(bossBarOrder)) {
-            for (GObject o : bossBarObjects) bossLayer.remove(o);
-            bossBarObjects.clear();
-            bossBarOrder.clear();
-            bossBarOrder.addAll(bosses);
-            int i = 0;
-            for (Boss b : bosses) {
-                boolean pal = b.isPalantir();
-                double w = pal ? 760 : 420, h = pal ? 22 : 12;
-                double x = (GameMap.WIDTH - w) / 2, y = 30 + i * (h + 30);
-                GRect back = Ui.rect(x, y, w, h, Ui.c(0x000000, 190), Ui.c(0xffffff, 120));
-                GRect fill = Ui.rect(x, y, w, h, pal ? Ui.c(0xff3b3b) : Ui.c(0xff9a5a), null);
-                GLabel name = Ui.label("", x, y - 4, pal ? Ui.F_H2 : Ui.F_BOLD, Ui.TEXT);
-                bossLayer.add(back); bossLayer.add(fill); bossLayer.add(name);
-                bossBarObjects.add(back); bossBarObjects.add(fill); bossBarObjects.add(name);
-                if (pal) {
-                    for (double thr : new double[] { 0.70, 0.35 }) {
-                        GRect tick = Ui.rect(x + w * thr - 1, y - 3, 2, h + 6, Ui.c(0xffffff), null);
-                        bossLayer.add(tick); bossBarObjects.add(tick);
-                    }
-                }
-                i++;
-            }
-        }
-        for (int i = 0; i < bossBarOrder.size(); i++) {
-            Boss b = bossBarOrder.get(i);
-            int base = 0;
-            for (int k = 0; k < i; k++) base += bossBarOrder.get(k).isPalantir() ? 5 : 3;
-            GRect fill = (GRect) bossBarObjects.get(base + 1);
-            GLabel name = (GLabel) bossBarObjects.get(base + 2);
-            boolean pal = b.isPalantir();
-            double w = pal ? 760 : 420;
-            fill.setSize(Math.max(0.5, w * b.getHpFraction()), pal ? 22 : 12);
-            String txt = b.getType().displayName + " [" + b.getType().getBossClass().label + "]  "
-                + (long) Math.ceil(b.getHp()) + " / " + (long) b.getMaxHp();
-            if (pal) txt += "   Phase " + (b.getPhase() + 1) + "/3: " + b.getPhaseName()
-                + (b.isTelegraphing() ? "   PREDICTIVE SURVEILLANCE " + String.format("%.1f", b.getTelegraphRemaining()) : "");
-            if (b.isFortified()) txt += "  (Fortified)";
-            if (b.isCamo()) txt += "  (Camo)";
-            name.setLabel(txt);
-            if (pal && b.isTelegraphing()) fill.setFillColor(Ui.c((time * 8) % 2 < 1 ? 0xff3b3b : 0xffffff));
-            else fill.setFillColor(pal ? Ui.c(0xff3b3b) : Ui.c(0xff9a5a));
-        }
-    }
-
     private void syncOverlay() {
         Tower sel = screen.getSelectedTower();
         TowerType placing = screen.getPlacing();
         Vec mouse = screen.getMouseWorld();
+        Tower hover = null;
         if (placing != null && mouse != null && insideWorld(mouse)) {
             double r = TowerCatalog.get(placing).statsForTier(0).range * map.towerRangeMultiplier(game, null);
             String problem = game.getTowerManager().placementProblem(placing, mouse);
             boolean ok = problem == null;
-            Color col = ok ? Ui.c(0x7fd8a8) : Ui.c(0xff5a5a);
-            ghostRange.setBounds(mouse.x - r, mouse.y - r, 2 * r, 2 * r);
-            ghostRange.setFillColor(Ui.withAlpha(col, 28)); ghostRange.setColor(Ui.withAlpha(col, 170));
+            Color col = ok ? Cyber.CYAN : Cyber.RED;
+            ghostRange.set(mouse.x, mouse.y, r);
+            ghostRange.setFill(Cyber.alpha(col, ok ? 20 : 30)); ghostRange.setLine(Cyber.alpha(col, ok ? 215 : 235));
+            ghostRange.setDashed(!ok); ghostRange.setPhase(time * 14);
             ghostRange.setVisible(true);
             double tr = TowerCatalog.get(placing).radius;
-            ghost.setBounds(mouse.x - tr, mouse.y - tr, 2 * tr, 2 * tr);
-            ghost.setFillColor(Ui.withAlpha(col, 140));
+            ghost.set(mouse.x, mouse.y, tr);
+            ghost.setFill(Cyber.alpha(col, ok ? 85 : 110)); ghost.setLine(col);
             ghost.setVisible(true);
-            ghostLabel.setLabel(ok ? placing.displayName + "  " + Ui.money(TowerCatalog.get(placing).baseCost) : problem);
-            ghostLabel.setLocation(mouse.x - ghostLabel.getWidth() / 2, mouse.y - tr - 8);
-            ghostLabel.setColor(col);
-            ghostLabel.setVisible(true);
+            ghostX1.setVisible(!ok); ghostX2.setVisible(!ok);
+            if (!ok) {
+                double k = tr * 0.55;
+                ghostX1.setStartPoint(mouse.x - k, mouse.y - k); ghostX1.setEndPoint(mouse.x + k, mouse.y + k);
+                ghostX2.setStartPoint(mouse.x - k, mouse.y + k); ghostX2.setEndPoint(mouse.x + k, mouse.y - k);
+            }
+            ghostPlate.set(ok ? placing.displayName : problem, ok ? Ui.money(TowerCatalog.get(placing).baseCost) : null, col);
+            placePlate(ghostPlate, mouse, tr);
+            ghostPlate.setVisible(true);
             rangeCircle.setVisible(false);
         } else {
-            ghostRange.setVisible(false); ghost.setVisible(false); ghostLabel.setVisible(false);
+            ghostRange.setVisible(false); ghost.setVisible(false); ghostPlate.setVisible(false);
+            ghostX1.setVisible(false); ghostX2.setVisible(false);
             if (sel != null && sel.isAlive()) {
-                double r = sel.effectiveRange(game);
-                rangeCircle.setBounds(sel.getPosition().x - r, sel.getPosition().y - r, 2 * r, 2 * r);
+                rangeCircle.set(sel.getPosition().x, sel.getPosition().y, sel.effectiveRange(game));
                 rangeCircle.setVisible(true);
             } else {
                 rangeCircle.setVisible(false);
             }
+            if (mouse != null && insideWorld(mouse)) hover = game.getTowerManager().towerAt(mouse);
+        }
+        // nameplates: tower under the cursor and the selected tower
+        Tower selShow = sel != null && sel.isAlive() && placing == null ? sel : null;
+        showPlate(selectPlate, selShow);
+        showPlate(hoverPlate, hover != null && hover != selShow ? hover : null);
+    }
+
+    private void showPlate(Nameplate p, Tower t) {
+        if (t == null) { p.setVisible(false); return; }
+        TowerType ty = t.getType();
+        p.set(ty.displayName, t.getTierLabel(), Cyber.lerp(Ui.c(ty.primaryRgb), Color.WHITE, 0.35));
+        placePlate(p, t.getPosition(), t.getRadius());
+        p.setVisible(true);
+    }
+
+    /** Puts a plate above (or below, near the top edge) a circle, clamped inside the world. */
+    private void placePlate(Nameplate p, Vec c, double r) {
+        double w = p.getPlateWidth();
+        double x = Math.max(4, Math.min(GameMap.WIDTH - w - 4, c.x - w / 2));
+        double y = c.y - r - Nameplate.HEIGHT - 12;
+        if (y < 4) y = c.y + r + 12;
+        y = Math.min(y, GameMap.HEIGHT - Nameplate.HEIGHT - 4);
+        p.place(x, y);
+    }
+
+    /** Reserves {@code dock} logical px under the HUD for the boss dock by shrinking the playfield uniformly. */
+    public void setDock(double dock) {
+        viewDock = Math.max(0, Math.min(140, dock));
+        viewScale = (Ui.WORLD_H - viewDock) / Ui.WORLD_H;
+    }
+
+    /** Maps a logical point (screen layout space) into world coordinates, or null outside the playfield. */
+    public Vec toWorld(double lx, double ly) {
+        double offX = (Ui.WORLD_W - GameMap.WIDTH * viewScale) / 2;
+        Vec p = new Vec((lx - Ui.WORLD_X - offX) / viewScale, (ly - Ui.WORLD_Y - viewDock) / viewScale);
+        return insideWorld(p) ? p : null;
+    }
+
+    @Override public void paint(Graphics g) {
+        Graphics2D g2 = (Graphics2D) g.create();
+        try {
+            Cyber.quality(g2);
+            double offX = (Ui.WORLD_W - GameMap.WIDTH * viewScale) / 2;
+            g2.translate(Ui.WORLD_X + offX, Ui.WORLD_Y + viewDock);
+            g2.scale(viewScale, viewScale);
+            g2.clipRect(0, 0, GameMap.WIDTH, GameMap.HEIGHT);
+            super.paint(g2);
+        } finally {
+            g2.dispose();
         }
     }
 

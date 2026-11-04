@@ -113,13 +113,13 @@ public final class MapSelectScreen extends GCompound {
         double tx = x + 16, ty = py + ph + 24, tw = w - 32;
         boolean compact = h < 520;
         Font nameF = MenuScreen.menuFont(Font.BOLD, compact ? 19 : 24);
-        Font bodyF = new Font(Font.SANS_SERIF, Font.PLAIN, compact ? 12 : 14);
-        Font tinyF = new Font(Font.SANS_SERIF, Font.PLAIN, compact ? 11 : 12);
+        Font bodyF = Cyber.body(Font.PLAIN, compact ? 12 : 14);
+        Font tinyF = Cyber.body(Font.PLAIN, compact ? 11 : 12);
         add(Ui.label(m.getName().toUpperCase(), tx, ty, nameF, Ui.TEXT));
         ty += compact ? 18 : 24;
         // difficulty badge
         String badge = m.getDifficulty().toUpperCase() + "  •  " + m.getRoutes().size() + (m.getRoutes().size() == 1 ? " LANE" : " LANES");
-        GLabel bl = Ui.label(badge, tx + 8, ty, new Font(Font.MONOSPACED, Font.BOLD, compact ? 11 : 13), dc);
+        GLabel bl = Ui.label(badge, tx + 8, ty, Cyber.mono(Font.BOLD, compact ? 11 : 13), dc);
         add(Ui.rect(tx, ty - (compact ? 12 : 14), bl.getWidth() + 16, compact ? 17 : 20, Ui.withAlpha(dc, 35), Ui.withAlpha(dc, 160)));
         add(bl);
         ty += compact ? 10 : 14;
@@ -136,7 +136,7 @@ public final class MapSelectScreen extends GCompound {
         while (need > avail && desc.size() > 1) { desc.remove(desc.size() - 1); desc.set(desc.size() - 1, ellipsis(desc.get(desc.size() - 1), bodyF, tw)); need -= lineB; }
         for (String l : desc) { ty += lineB; add(Ui.label(l, tx, ty, bodyF, Ui.TEXT)); }
         ty += 16;
-        add(Ui.label("MECHANICS", tx, ty, new Font(Font.MONOSPACED, Font.BOLD, compact ? 10 : 12), MenuScreen.CYAN));
+        add(Ui.label("MECHANICS", tx, ty, Cyber.mono(Font.BOLD, compact ? 10 : 12), MenuScreen.CYAN));
         for (String l : mech) { ty += lineT; add(Ui.label(l, tx, ty, tinyF, Ui.MUTED)); }
         NeonButton play = new NeonButton(x + 16, buttonY, w - 32, buttonH, "DEPLOY", MenuScreen.menuFont(Font.BOLD, compact ? 17 : 20), dc, () -> app.startGame(idx));
         buttons.add(play);
@@ -144,7 +144,7 @@ public final class MapSelectScreen extends GCompound {
     }
 
     private static String ellipsis(String line, Font f, double maxW) {
-        GLabel probe = new GLabel(line + "…");
+        GLabel probe = new Cyber.Text(line + "…");
         probe.setFont(f);
         String s = line;
         while (probe.getWidth() > maxW && s.length() > 1) { s = s.substring(0, s.length() - 1).trim(); probe.setLabel(s + "…"); }
