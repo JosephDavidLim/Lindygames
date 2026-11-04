@@ -54,6 +54,8 @@ public final class HeadlessTests {
         run("abilityCooldowns", HeadlessTests::abilityCooldowns);
         run("mapsTraversable", HeadlessTests::mapsTraversable);
         run("mapMechanics", HeadlessTests::mapMechanics);
+        run("adminMode", HeadlessTests::adminMode);
+        run("newMaps", HeadlessTests::newMaps);
         run("winAndLose", HeadlessTests::winAndLose);
         run("shopLayout", HeadlessTests::shopLayout);
         run("stressLateWaves", HeadlessTests::stressLateWaves);
@@ -816,6 +818,86 @@ public final class HeadlessTests {
         GameMap mono = MapCatalog.create(1);
         check(!mono.hasLineOfSight(new Vec(400, 150), new Vec(400, 290)), "chassis blocks LOS");
         check(mono.hasLineOfSight(new Vec(150, 150), new Vec(150, 290)), "clear LOS beside chassis");
+    }
+
+    /** Silicon Valley, The Neural Network and Abandoned Data Center: geometry and the Data Center hazards. */
+    private static void newMaps() {
+        // buildings never sit on a road, on any of the three maps
+        for (int m = 4; m < MapCatalog.MAP_COUNT; m++) {
+            GameMap map = MapCatalog.create(m);
+            for (Path r : map.getRoutes()) {
+                for (double d = 0; d <= r.getTotalLength(); d += 5) {
+                    Vec p = r.positionAt(d);
+                    for (lindefense.map.Obstacle o : map.getObstacles()) check(!o.contains(p, GameMap.TRACK_HALF_WIDTH + 2), map.getName() + ": " + o.label + " clear of the track at " + p);
+                }
+            }
+        }
+        // Neural Network: six routes, each from an input to the single exit through the output neuron
+        lindefense.map.NeuralNetwork nn = (lindefense.map.NeuralNetwork) MapCatalog.create(5);
+        check(nn.getRoutes().size() == 6, "neural network has six routes");
+        for (Path r : nn.getRoutes()) {
+            Vec s0 = r.getStart();
+            check(s0.dist(lindefense.map.NeuralNetwork.IN_A) < 1 || s0.dist(lindefense.map.NeuralNetwork.IN_B) < 1, r.getName() + " starts at an input");
+            check(r.getEnd().dist(lindefense.map.NeuralNetwork.EXIT) < 1, r.getName() + " ends at the exit");
+            check(r.distanceToPoint(lindefense.map.NeuralNetwork.OUT) < 20, r.getName() + " passes through the output neuron");
+        }
+        // Data Center: hazards warn, activate, slow enemies only inside their section, bosses a third as much
+        Game g = newGame(6);
+        lindefense.map.AbandonedDataCenter dc = (lindefense.map.AbandonedDataCenter) g.getMap();
+        g.setGlobalEnemySpeedMultiplier(0);
+        int ticks = 0;
+        boolean warned = false;
+        while (dc.getActiveHazard() < 0 && ticks < 2000) { g.step(Game.DT); ticks++; if (dc.getWarnedHazard() >= 0) warned = true; }
+        check(warned, "a hazard warns before it activates");
+        int a = dc.getActiveHazard();
+        check(a >= 0 && Math.abs(ticks * Game.DT - lindefense.map.AbandonedDataCenter.HAZARD_INTERVAL) < 0.2, "a hazard activates after " + lindefense.map.AbandonedDataCenter.HAZARD_INTERVAL + " s (" + ticks * Game.DT + ")");
+        lindefense.map.AbandonedDataCenter.Hazard h = dc.getHazards().get(a);
+        Enemy in = spawnAt(g, EnemyType.PRIMITIVE_VARIABLE, null, 0, (h.from + h.to) / 2);
+        Enemy out = spawnAt(g, EnemyType.PRIMITIVE_VARIABLE, null, 0, h.from - 60);
+        Enemy boss = spawnAt(g, EnemyType.BELLARMINE_COLLEGE_PREP, null, 0, (h.from + h.to) / 2);
+        double slow = lindefense.map.AbandonedDataCenter.HAZARD_SLOW;
+        check(Math.abs(dc.enemySpeedMultiplier(in) - (1 - slow)) < 1e-9, "enemies in the active section are slowed");
+        check(dc.enemySpeedMultiplier(out) == 1.0, "enemies outside the section are not slowed");
+        check(Math.abs(dc.enemySpeedMultiplier(boss) - (1 - slow / 3)) < 1e-9, "bosses take a third of the hazard slow");
+        check(dc.getEventText() != null, "an active hazard shows a banner");
+        g.run((int) (lindefense.map.AbandonedDataCenter.HAZARD_DURATION / Game.DT) + 2);
+        check(dc.getActiveHazard() < 0 && dc.enemySpeedMultiplier(in) == 1.0, "the hazard switches off after its duration");
+        int prev = a, repeats = 0;
+        for (int k = 0; k < 12; k++) {
+            int guard = 0;
+            while (dc.getActiveHazard() < 0 && guard++ < 2000) g.step(Game.DT);
+            int now = dc.getActiveHazard();
+            if (now == prev) repeats++;
+            prev = now;
+            while (dc.getActiveHazard() >= 0 && guard++ < 4000) g.step(Game.DT);
+        }
+        check(repeats == 0, "the same hazard never fires twice in a row");
+    }
+
+    /** SETTINGS > ADMIN CODE: the code check, and a match in admin mode (unlimited credits, every hero unlocked). */
+    private static void adminMode() {
+        check(lindefense.sim.AdminMode.matches("austin"), "admin code accepted");
+        check(lindefense.sim.AdminMode.matches("  Austin "), "admin code ignores case and spaces");
+        check(!lindefense.sim.AdminMode.matches("austin1") && !lindefense.sim.AdminMode.matches("") && !lindefense.sim.AdminMode.matches(null), "wrong codes rejected");
+        Game normal = newGame(0);
+        check(!normal.isAdmin() && !normal.isHeroUnlocked(TowerType.ROHAN), "games start without admin mode");
+        Game g = newGame(0);
+        g.setAdmin(true);
+        double before = g.getCash();
+        check(before >= Game.ADMIN_CASH, "admin mode tops credits up");
+        for (TowerType h : TowerType.heroes()) check(g.isHeroUnlocked(h), "admin unlocks " + h.displayName);
+        check(g.getHeroCollection().unlocked().isEmpty(), "admin mode does not touch the saved hero collection");
+        int placed = 0, maxed = 0;
+        for (TowerType type : TowerType.purchasable()) {
+            Tower t = g.placeTower(type, buildableNear(g, new Vec(150 + (placed % 8) * 120, 300 + (placed / 8) * 180), 260));
+            if (t == null) continue;
+            placed++;
+            while (g.upgradeTower(t)) { /* every upgrade */ }
+            if (!t.canUpgrade()) maxed++;
+        }
+        check(placed >= 10 && maxed == placed, "admin mode buys and fully upgrades every tower (" + maxed + "/" + placed + ")");
+        check(g.getCash() == before, "spending never lowers admin credits");
+        check(Game.freshCopy(g).isAdmin(), "RESTART keeps admin mode");
     }
 
     private static void mapMechanics() {

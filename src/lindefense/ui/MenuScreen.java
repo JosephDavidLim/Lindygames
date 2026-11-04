@@ -42,6 +42,13 @@ public final class MenuScreen extends GCompound {
     private AudioToggle[] audioToggles;
     private final GCompound help = new GCompound();
     private boolean helpShown;
+    // SETTINGS panel: admin code entry
+    private final GCompound settings = new GCompound();
+    private boolean settingsShown;
+    private final StringBuilder codeInput = new StringBuilder();
+    private GLabel codeLabel, adminStatus, codeFeedback;
+    private NeonButton disableAdmin;
+    private double feedbackTime;
     private double t;
     private double introT;
     private boolean introDone;
@@ -123,13 +130,14 @@ public final class MenuScreen extends GCompound {
         // ---- buttons
         Font bf = menuFont(Font.BOLD, 24);
         NeonButton play = new NeonButton(Ui.W / 2.0 - 150, 488, 300, 50, "PLAY", bf, CYAN, app::showMapSelect);
-        NeonButton tut = new NeonButton(Ui.W / 2.0 - 150, 550, 300, 50, "TUTORIAL", bf, new Color(0x3bff8a), app::startTutorial);
-        NeonButton cat = new NeonButton(Ui.W / 2.0 - 150, 612, 300, 50, "CATALOG", bf, CYAN, app::showCatalog);
-        NeonButton how = new NeonButton(Ui.W / 2.0 - 150, 674, 300, 50, "HOW TO PLAY", bf, MAGENTA, this::toggleHelp);
-        NeonButton quit = new NeonButton(Ui.W / 2.0 - 150, 736, 300, 50, "QUIT", bf, YELLOW, app::quit);
-        for (NeonButton b : new NeonButton[] { play, tut, cat, how, quit }) { buttons.add(b); add(b); }
+        NeonButton tut = new NeonButton(Ui.W / 2.0 - 150, 546, 300, 50, "TUTORIAL", bf, new Color(0x3bff8a), app::startTutorial);
+        NeonButton cat = new NeonButton(Ui.W / 2.0 - 150, 604, 300, 50, "CATALOG", bf, CYAN, app::showCatalog);
+        NeonButton how = new NeonButton(Ui.W / 2.0 - 150, 662, 300, 50, "HOW TO PLAY", bf, MAGENTA, this::toggleHelp);
+        NeonButton set = new NeonButton(Ui.W / 2.0 - 150, 720, 300, 50, "SETTINGS", bf, new Color(0x9b7bff), this::toggleSettings);
+        NeonButton quit = new NeonButton(Ui.W / 2.0 - 150, 778, 300, 50, "QUIT", bf, YELLOW, app::quit);
+        for (NeonButton b : new NeonButton[] { play, tut, cat, how, set, quit }) { buttons.add(b); add(b); }
         // AUDIO: Sound / Music toggles under the main buttons
-        audioToggles = AudioToggle.pair(Ui.W / 2.0 - 150, 800, 145, 38, 10, "SOUND", "MUSIC", chips);
+        audioToggles = AudioToggle.pair(Ui.W / 2.0 - 150, 842, 145, 38, 10, "SOUND", "MUSIC", chips);
         for (UIButton c : chips) add(c);
 
         // ---- CRT overlay, HUD frame, readouts
@@ -145,7 +153,7 @@ public final class MenuScreen extends GCompound {
         sysLabel = Ui.label("SYS.ONLINE  •", 44, 52, mono, new Color(0x3bff8a));
         threatLabel = Ui.label("THREAT LVL: PALANTIR", 44, Ui.H - 40, mono, MAGENTA);
         verLabel = Ui.label(lindefense.Version.LABEL, Ui.W - 150, 52, mono, YELLOW);
-        tickerLabel = Ui.label("LINDEFENSE // 100 WAVES // 18 TOWERS // 6 HEROES // 4 MAPS", 0, Ui.H - 40, mono, Ui.withAlpha(CYAN, 200));
+        tickerLabel = Ui.label("LINDEFENSE // 100 WAVES // 18 TOWERS // 6 HEROES // 7 MAPS", 0, Ui.H - 40, mono, Ui.withAlpha(CYAN, 200));
         tickerLabel.setLocation(Ui.W - 44 - tickerLabel.getWidth(), Ui.H - 40);
         add(sysLabel); add(threatLabel); add(verLabel); add(tickerLabel);
         GLabel foot = Ui.label("JAVA + STANFORD ACM GRAPHICS  •  RESIZE THE WINDOW FREELY", 0, 0, menuFont(Font.PLAIN, 12), Ui.withAlpha(CYAN, 120));
@@ -155,6 +163,9 @@ public final class MenuScreen extends GCompound {
         buildHelp();
         help.setVisible(false);
         add(help);
+        buildSettings();
+        settings.setVisible(false);
+        add(settings);
 
         // start the intro with every letter hidden
         for (int i = 0; i < main.getLetterCount(); i++) setLetterStackVisible(i, false);
@@ -305,8 +316,112 @@ public final class MenuScreen extends GCompound {
 
     public void mousePressed(double lx, double ly) {
         skipIntro();
+        if (settingsShown) {   // the settings panel is modal
+            for (NeonButton b : buttons) if (b.getParent() == settings && b.isVisible() && b.hit(lx, ly)) { b.click(); return; }
+            return;
+        }
         if (!helpShown) for (UIButton c : chips) if (c.hit(lx, ly)) { c.click(); return; }
-        for (NeonButton b : buttons) if (b.hit(lx, ly) && b.isVisible() && (b.getParent() != help || helpShown)) { b.click(); return; }
+        for (NeonButton b : buttons) if (b.hit(lx, ly) && b.isVisible() && b.getParent() != settings && (b.getParent() != help || helpShown)) { b.click(); return; }
+    }
+
+    // ------------------------------------------------------------------ settings / admin code
+    private void buildSettings() {
+        double w = 680, h = 400, x = (Ui.W - w) / 2, y = 300;
+        settings.add(Ui.rect(0, 0, Ui.W, Ui.H, Ui.withAlpha(new Color(0x02030a), 170), Ui.withAlpha(new Color(0x02030a), 0)));
+        settings.add(new Cyber.Chamfer(x, y, w, h, 18).fill(new Color(7, 10, 22, 248)).border(CYAN).glow(1).ticks(true));
+        GLabel title = Ui.label("SETTINGS", 0, 0, menuFont(Font.BOLD, 32), CYAN);
+        title.setLocation((Ui.W - title.getWidth()) / 2, y + 52);
+        settings.add(title);
+        double lx = x + 40, ty = y + 100;
+        settings.add(Ui.label("ADMIN CODE", lx, ty, menuFont(Font.BOLD, 20), new Color(0x9b7bff)));
+        Font body = Cyber.body(Font.PLAIN, 14);
+        for (String l : Ui.wrap("Enter the admin code to turn on admin mode: every hero is unlocked and credits are unlimited, so you can buy and fully upgrade every tower. Applies to matches started from PLAY.", body, w - 80)) {
+            ty += 20;
+            settings.add(Ui.label(l, lx, ty, body, Ui.TEXT));
+        }
+        double by = ty + 22;
+        settings.add(new Cyber.Chamfer(lx, by, 380, 48, 8).fill(new Color(2, 4, 12, 240)).border(Ui.withAlpha(CYAN, 200)).scan(false));
+        codeLabel = Ui.label("", lx + 16, by + 32, Cyber.mono(Font.BOLD, 20), Cyber.TEXT);
+        settings.add(codeLabel);
+        NeonButton submit = new NeonButton(lx + 400, by, 200, 48, "ENTER", menuFont(Font.BOLD, 20), new Color(0x3bff8a), this::submitCode);
+        settings.add(submit);
+        buttons.add(submit);
+        adminStatus = Ui.label("", lx, by + 84, Cyber.mono(Font.BOLD, 15), Cyber.DIM);
+        settings.add(adminStatus);
+        codeFeedback = Ui.label("", lx, by + 108, Cyber.mono(Font.PLAIN, 13), Cyber.RED);
+        settings.add(codeFeedback);
+        disableAdmin = new NeonButton(lx + 400, by + 64, 200, 42, "DISABLE ADMIN", menuFont(Font.BOLD, 16), Cyber.RED, this::disableAdmin);
+        settings.add(disableAdmin);
+        buttons.add(disableAdmin);
+        NeonButton close = new NeonButton((Ui.W - 200) / 2.0, y + h - 66, 200, 46, "CLOSE", menuFont(Font.BOLD, 20), MAGENTA, this::toggleSettings);
+        settings.add(close);
+        buttons.add(close);
+        refreshSettings();
+    }
+
+    private void toggleSettings() {
+        settingsShown = !settingsShown;
+        if (settingsShown) { helpShown = false; help.setVisible(false); codeInput.setLength(0); codeFeedback.setLabel(""); }
+        settings.setVisible(settingsShown);
+        refreshSettings();
+    }
+
+    private void submitCode() {
+        if (lindefense.sim.AdminMode.tryCode(codeInput.toString())) {
+            lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_SELECT);   // AUDIO HOOK
+            codeFeedback.setLabel("Code accepted. Admin mode is on.");
+            codeFeedback.setColor(Cyber.GREEN);
+        } else {
+            lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.INVALID);   // AUDIO HOOK
+            codeFeedback.setLabel(codeInput.length() == 0 ? "Type the code first." : "Invalid code.");
+            codeFeedback.setColor(Cyber.RED);
+        }
+        codeInput.setLength(0);
+        feedbackTime = 4;
+        refreshSettings();
+    }
+
+    private void disableAdmin() {
+        lindefense.sim.AdminMode.disable();
+        codeFeedback.setLabel("Admin mode is off.");
+        codeFeedback.setColor(Cyber.MUTED);
+        feedbackTime = 4;
+        refreshSettings();
+    }
+
+    private void refreshSettings() {
+        boolean on = lindefense.sim.AdminMode.isEnabled();
+        adminStatus.setLabel(on ? "ADMIN MODE: ON  //  UNLIMITED CREDITS  //  ALL HEROES" : "ADMIN MODE: OFF");
+        adminStatus.setColor(on ? Cyber.GREEN : Cyber.DIM);
+        disableAdmin.setVisible(on);
+        updateCodeLabel();
+    }
+
+    private void updateCodeLabel() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < codeInput.length(); i++) sb.append('*');
+        boolean caret = settingsShown && ((int) (t * 2.2)) % 2 == 0;
+        if (codeInput.length() == 0 && !caret) codeLabel.setLabel("enter code");
+        else codeLabel.setLabel(sb + (caret ? "_" : ""));
+        codeLabel.setColor(codeInput.length() == 0 && !caret ? Cyber.DIM : Cyber.TEXT);
+    }
+
+    /** True while the settings panel is open and capturing typed text. */
+    public boolean isTyping() { return settingsShown; }
+
+    /** Keys while the settings panel is open: type the code, Enter submits, Backspace deletes, Esc closes. */
+    public void keyPressed(java.awt.event.KeyEvent e) {
+        skipIntro();
+        if (!settingsShown) return;
+        int k = e.getKeyCode();
+        if (k == java.awt.event.KeyEvent.VK_ESCAPE) { toggleSettings(); return; }
+        if (k == java.awt.event.KeyEvent.VK_ENTER) { submitCode(); return; }
+        if (k == java.awt.event.KeyEvent.VK_BACK_SPACE) { if (codeInput.length() > 0) codeInput.setLength(codeInput.length() - 1); updateCodeLabel(); return; }
+        char c = e.getKeyChar();
+        if (c != java.awt.event.KeyEvent.CHAR_UNDEFINED && !Character.isISOControl(c) && codeInput.length() < 24) {
+            codeInput.append(c);
+            updateCodeLabel();
+        }
     }
 
     public void mouseMoved(double lx, double ly) {
@@ -324,6 +439,10 @@ public final class MenuScreen extends GCompound {
     // ------------------------------------------------------------------ animation
     public void frame(double dt) {
         t += dt;
+        if (settingsShown) {
+            updateCodeLabel();
+            if (feedbackTime > 0 && (feedbackTime -= dt) <= 0) codeFeedback.setLabel("");
+        }
         animateIntro(dt);
         animateLogo(dt);
         animateBackdrop(dt);

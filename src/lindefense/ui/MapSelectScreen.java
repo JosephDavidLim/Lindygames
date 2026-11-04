@@ -43,7 +43,7 @@ public final class MapSelectScreen extends GCompound {
         LogoWordmark small = new LogoWordmark(22, new Color(0xeafcff), MenuScreen.CYAN, true);
         small.setLocation(Ui.W - 190, 46);
         add(small);
-        GLabel sub = Ui.label(spaced("TWO MAPS PER DIFFICULTY TIER  -  PICK YOUR BATTLEFIELD"), 0, 0, MenuScreen.menuFont(Font.PLAIN, 12), Ui.withAlpha(MenuScreen.MAGENTA, 200));
+        GLabel sub = Ui.label(spaced("SEVEN BATTLEFIELDS  -  BEGINNER TO EXPERT  -  PICK YOURS"), 0, 0, MenuScreen.menuFont(Font.PLAIN, 12), Ui.withAlpha(MenuScreen.MAGENTA, 200));
         sub.setLocation((Ui.W - sub.getWidth()) / 2, 88);
         add(sub);
 
@@ -118,21 +118,9 @@ public final class MapSelectScreen extends GCompound {
         double pw = GameMap.WIDTH * s;
         ph = GameMap.HEIGHT * s;
         double px = x + (w - pw) / 2, py = y + 14;
-        add(Ui.rect(px, py, pw, ph, Ui.c(m.getBackgroundRgb()), Ui.withAlpha(MenuScreen.CYAN, 90)));
-        for (GameMap.Decoration d : m.getDecorations()) {
-            if (d.kind == GameMap.Decoration.Kind.RECT) add(Ui.rect(px + d.x * s, py + d.y * s, d.w * s, d.h * s, d.filled ? Ui.c(d.rgb) : null, Ui.c(d.rgb)));
-            if (d.kind == GameMap.Decoration.Kind.OVAL) add(Ui.oval(px + d.x * s, py + d.y * s, d.w * s, d.h * s, d.filled ? Ui.c(d.rgb) : null, Ui.c(d.rgb)));
-        }
-        Color track = Ui.c(m.getTrackRgb());
+        add(new MapArt(m, px, py, pw, ph));
+        add(Ui.rect(px, py, pw, ph, null, Ui.withAlpha(MenuScreen.CYAN, 90)));
         for (Path r : m.getRoutes()) {
-            List<Vec> wp = r.getWaypoints();
-            for (int k = 0; k + 1 < wp.size(); k++) {
-                for (int o = -1; o <= 1; o++) {
-                    GLine l = new GLine(px + wp.get(k).x * s + o, py + wp.get(k).y * s, px + wp.get(k + 1).x * s + o, py + wp.get(k + 1).y * s);
-                    l.setColor(track);
-                    add(l);
-                }
-            }
             add(Ui.oval(px + r.getStart().x * s - 3, py + r.getStart().y * s - 3, 6, 6, Ui.GREEN, Ui.GREEN));
             add(Ui.oval(px + r.getEnd().x * s - 3, py + r.getEnd().y * s - 3, 6, 6, Ui.RED, Ui.RED));
         }

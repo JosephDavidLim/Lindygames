@@ -22,6 +22,7 @@ import lindefense.combat.VisualEvent;
 import lindefense.enemy.Boss;
 import lindefense.enemy.Enemy;
 import lindefense.effects.Effects;
+import lindefense.map.AbandonedDataCenter;
 import lindefense.map.GameMap;
 import lindefense.map.HallucinationCanyon;
 import lindefense.map.LegacyMonolith;
@@ -108,6 +109,9 @@ public final class WorldView extends GCompound {
     private GRect stormRect;
     private final List<GObject> shortFx = new ArrayList<>();
     private double time;
+    private MapArt.Pulses pulses;
+    /** Abandoned Data Center: one list of track-section polygons per hazard, lit while it warns or is active. */
+    private final List<List<GPolygon>> hazardFx = new ArrayList<>();
 
     public WorldView(GameScreen screen) {
         this.screen = screen;
@@ -131,28 +135,12 @@ public final class WorldView extends GCompound {
 
     // ------------------------------------------------------------------ static map
     private void buildBackground() {
-        background.add(Ui.rect(0, 0, GameMap.WIDTH, GameMap.HEIGHT, Ui.c(map.getBackgroundRgb()), Ui.c(map.getBackgroundRgb())));
-        for (GameMap.Decoration d : map.getDecorations()) {
-            Color col = Ui.c(d.rgb);
-            switch (d.kind) {
-                case RECT: background.add(Ui.rect(d.x, d.y, d.w, d.h, d.filled ? col : null, col)); break;
-                case OVAL: background.add(Ui.oval(d.x, d.y, d.w, d.h, d.filled ? col : null, col)); break;
-                case LINE: { GLine l = new GLine(d.x, d.y, d.x + d.w, d.y + d.h); l.setColor(col); background.add(l); break; }
-                case LABEL: background.add(Ui.label(d.text, d.x, d.y, Ui.F_SMALL, col)); break;
-                default: break;
-            }
-        }
-        Color track = Ui.c(map.getTrackRgb());
-        Color edge = Ui.withAlpha(Ui.c(0x000000), 110);
-        double hw = GameMap.TRACK_HALF_WIDTH;
+        // detailed futuristic art (background, set dressing, track), pre-rendered once into a bitmap
+        background.add(new MapArt(map));
+        pulses = new MapArt.Pulses(map);
+        mapFx.add(pulses);
         for (Path r : map.getRoutes()) {
             List<Vec> w = r.getWaypoints();
-            for (int i = 0; i + 1 < w.size(); i++) background.add(segment(w.get(i), w.get(i + 1), hw + 3, edge));
-            for (Vec p : w) background.add(Ui.oval(p.x - hw - 3, p.y - hw - 3, 2 * (hw + 3), 2 * (hw + 3), edge, edge));
-            for (int i = 0; i + 1 < w.size(); i++) background.add(segment(w.get(i), w.get(i + 1), hw, track));
-            for (Vec p : w) background.add(Ui.oval(p.x - hw, p.y - hw, 2 * hw, 2 * hw, track, track));
-            Color center = Ui.withAlpha(Ui.c(0xffffff), 60);
-            for (int i = 0; i + 1 < w.size(); i++) { GLine l = new GLine(w.get(i).x, w.get(i).y, w.get(i + 1).x, w.get(i + 1).y); l.setColor(center); background.add(l); }
             addMarker(r.getStart(), w.get(1).sub(w.get(0)).normalized(), Cyber.GREEN, "IN");
             addMarker(r.getEnd(), w.get(w.size() - 1).sub(w.get(w.size() - 2)).normalized(), Cyber.RED, "OUT");
         }
@@ -167,6 +155,25 @@ public final class WorldView extends GCompound {
             ventRect = Ui.rect(0, 0, GameMap.WIDTH, 10, Ui.c(0xff6a00, 45), Ui.c(0xff6a00, 120));
             ventRect.setVisible(false);
             mapFx.add(ventRect);
+        }
+        if (map instanceof AbandonedDataCenter) {
+            Path r = map.getRoutes().get(0);
+            for (AbandonedDataCenter.Hazard h : ((AbandonedDataCenter) map).getHazards()) {
+                List<GPolygon> polys = new ArrayList<>();
+                Vec prev = r.positionAt(h.from);
+                for (double d = h.from + 24; ; d += 24) {
+                    Vec next = r.positionAt(Math.min(d, h.to));
+                    if (next.dist(prev) > 0.5) {
+                        GPolygon p = segment(prev, next, GameMap.TRACK_HALF_WIDTH + 2, Ui.c(h.rgb, 0));
+                        p.setVisible(false);
+                        mapFx.add(p);
+                        polys.add(p);
+                    }
+                    prev = next;
+                    if (d >= h.to) break;
+                }
+                hazardFx.add(polys);
+            }
         }
         if (map instanceof HallucinationCanyon) {
             stormRect = Ui.rect(0, 0, GameMap.WIDTH, GameMap.HEIGHT, Ui.c(0xff8cf0, 35), Ui.c(0xff8cf0, 0));
@@ -504,6 +511,7 @@ public final class WorldView extends GCompound {
     }
 
     private void syncMapFx() {
+        pulses.setTime(time);
         if (map instanceof SiliconCircuit) {
             SiliconCircuit sc = (SiliconCircuit) map;
             for (int i = 0; i < padFill.size(); i++) {
@@ -531,6 +539,20 @@ public final class WorldView extends GCompound {
                 double[] band = lm.getFloors()[f];
                 ventRect.setBounds(0, band[0], GameMap.WIDTH, band[1] - band[0]);
                 ventRect.setFillColor(Ui.c(0xff6a00, (int) (35 + 25 * Math.sin(time * 4))));
+            }
+        }
+        if (!hazardFx.isEmpty()) {
+            AbandonedDataCenter dc = (AbandonedDataCenter) map;
+            int active = dc.getActiveHazard(), warned = dc.getWarnedHazard();
+            for (int i = 0; i < hazardFx.size(); i++) {
+                boolean on = i == active || i == warned;
+                Color col = null;
+                if (i == active) col = Ui.c(dc.getHazards().get(i).rgb, (int) (70 + 45 * Math.sin(time * 9)));
+                else if (i == warned) col = Ui.c(0xffd23b, ((int) (time * 8)) % 2 == 0 ? 120 : 30);
+                for (GPolygon p : hazardFx.get(i)) {
+                    p.setVisible(on);
+                    if (col != null) { p.setFillColor(col); p.setColor(col); }
+                }
             }
         }
         if (stormRect != null) {

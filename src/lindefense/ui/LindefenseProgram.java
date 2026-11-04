@@ -148,6 +148,7 @@ public class LindefenseProgram extends GraphicsProgram {
         lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_SELECT);   // AUDIO HOOK
         Game g = new Game(MapCatalog.create(mapIndex), System.nanoTime(), lindefense.sim.Difficulty.getSelected());   // DIFFICULTY HOOK
         g.setHeroCollection(lindefense.sim.HeroCollection.persistent());   // Hero Store unlocks persist across sessions
+        g.setAdmin(lindefense.sim.AdminMode.isEnabled());   // SETTINGS > ADMIN CODE: unlimited credits, all heroes
         startGame(g);
     }
 
@@ -241,6 +242,8 @@ public class LindefenseProgram extends GraphicsProgram {
     @Override public void mouseDragged(MouseEvent e) { mouseMoved(e); }
 
     @Override public void keyPressed(KeyEvent e) {
+        // SETTINGS text entry gets every key first (so typing M or N doesn't toggle the audio)
+        if (gameScreen == null && catalog == null && menu != null && menu.isTyping()) { menu.keyPressed(e); return; }
         // AUDIO HOOK: M toggles music, N toggles sound, on every screen
         lindefense.audio.AudioManager am = lindefense.audio.AudioManager.get();
         if (am != null && (e.getKeyCode() == KeyEvent.VK_M || e.getKeyCode() == KeyEvent.VK_N)) {

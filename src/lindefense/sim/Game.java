@@ -97,13 +97,27 @@ public final class Game {
         if (idx < 0) throw new IllegalArgumentException("map is not in the catalog: " + old.getMap().getName());
         Game g = new Game(lindefense.map.MapCatalog.create(idx), System.nanoTime(), old.getDifficulty());
         g.setHeroCollection(old.getHeroCollection());   // unlocks are permanent; deployments reset per match
+        g.setAdmin(old.isAdmin());
         return g;
     }
 
     // ---------------- Hero Store ----------------
     public HeroCollection getHeroCollection() { return heroes; }
     public void setHeroCollection(HeroCollection c) { heroes = c == null ? HeroCollection.inMemory() : c; }
-    public boolean isHeroUnlocked(TowerType type) { return heroes.isUnlocked(type); }
+    public boolean isHeroUnlocked(TowerType type) { return (admin && type != null && type.isHero()) || heroes.isUnlocked(type); }
+
+    // ---------------- admin mode ----------------
+    /** Credits shown while admin mode is on (spending never lowers them). */
+    public static final double ADMIN_CASH = 999_999_999;
+    private boolean admin;
+
+    /** Admin mode (see {@link AdminMode}): unlimited credits and every hero unlocked for this match. */
+    public void setAdmin(boolean on) {
+        admin = on;
+        if (on) cash = Math.max(cash, ADMIN_CASH);
+    }
+
+    public boolean isAdmin() { return admin; }
     /** True once this hero has been deployed in the current match (it stays true after the hero is removed). */
     public boolean isHeroDeployed(TowerType type) { return deployedHeroes.contains(type); }
     /** Called by the tower manager when a hero is placed. */
@@ -116,7 +130,7 @@ public final class Game {
     public String heroPurchaseProblem(TowerType type) {
         if (type == null || !type.isHero()) return "Not a hero";
         if (state != State.PLAYING) return "Game over";
-        if (heroes.isUnlocked(type)) return "Already unlocked";
+        if (isHeroUnlocked(type)) return "Already unlocked";
         if (cash < lindefense.tower.TowerCatalog.get(type).unlockCost) return "Not enough cash";
         return null;
     }
@@ -204,6 +218,7 @@ public final class Game {
     }
 
     public boolean spendCash(double amount) {
+        if (admin) return true;   // unlimited credits
         if (cash < amount) return false;
         cash -= amount;
         return true;
