@@ -2,7 +2,6 @@ package lindefense.ui;
 
 import acm.graphics.GCompound;
 import acm.graphics.GLabel;
-import acm.graphics.GObject;
 import acm.graphics.GOval;
 import acm.graphics.GPolygon;
 import acm.graphics.GRect;
@@ -10,181 +9,136 @@ import java.awt.Color;
 import lindefense.enemy.Enemy;
 import lindefense.sim.Game;
 import lindefense.sim.Vec;
-import lindefense.tower.Faction;
 import lindefense.tower.Tower;
 import lindefense.tower.TowerType;
+import lindefense.ui.sprites.towers.Art;
+import lindefense.ui.sprites.towers.TowerArt;
+import lindefense.ui.sprites.towers.TowerArtFactory;
 
 /**
- * Visual model of a placed tower. Each faction has a distinct silhouette and
- * every progression tier adds visible hardware (rings, barrels, crown, glow),
- * so upgrades are apparent at a glance. The turret rotates toward the last
- * target; objects are built once per tier and mutated during {@link #sync}.
+ * Visual model of a placed tower. The cartoon body is delegated to a
+ * {@link TowerArt} from {@code lindefense.ui.sprites.towers} (one class per
+ * tower type, five tiers each) and is rebuilt only when the tier changes.
+ * This class owns the functional overlays: turret aiming at the last target,
+ * firing recoil and muzzle flash, the ability-ready ring and cooldown bar,
+ * the Palantir surveillance ring with its TARGETED / SURVEILLED label, the hero
+ * badge and the four tier pips (no always-on name label; WorldView draws a
+ * hover / selection nameplate). Between rebuilds only object state is mutated.
  */
+@SuppressWarnings({ "serial", "this-escape" })
 public final class TowerSprite extends GCompound {
     private static final long serialVersionUID = 1L;
 
+    private static final double SLEW_RATE = 9.0; // rad/s turret turn speed
+    private static final Color PIP_OFF = new Color(0x2a3140);
+
     private final Tower tower;
     private int builtTier = -1;
-    private GPolygon turret;
-    private double turretAngle;
-    private GOval glow;
-    private GOval surveilRing;
-    private GLabel mark;
+    private TowerArt art;
+    private double aimAngle = TowerArt.IDLE_ANGLE;
     private GOval abilityRing;
     private GRect cdBack, cdBar;
+    private GOval surveilRing;
+    private GLabel mark;
     private double pulse;
+    private double clock;
 
+    /** Creates the sprite for a tower and positions it at the tower's world position. */
     public TowerSprite(Tower t) {
         this.tower = t;
         setLocation(t.getPosition().x, t.getPosition().y);
         rebuild();
     }
 
+    /** The tower this sprite draws. */
     public Tower getTower() { return tower; }
 
     private void rebuild() {
         removeAll();
-        builtTier = tower.getTier();
+        builtTier = clampTier(tower.getTier());
         TowerType type = tower.getType();
-        Color pri = Ui.c(type.primaryRgb);
-        Color sec = Ui.c(type.secondaryRgb);
         double r = tower.getRadius();
-        int tier = tower.getTier();
         boolean temp = tower.isTemporary();
 
-        // Tier 3 glow
-        glow = Ui.oval(-r * 1.7, -r * 1.7, r * 3.4, r * 3.4, Ui.withAlpha(sec, 50), Ui.withAlpha(sec, 90));
-        glow.setVisible(tier >= 4);
-        add(glow);
-        // Tier 1 outer ring, Tier 2 double ring
-        if (tier >= 1) add(Ui.oval(-r * 1.25, -r * 1.25, r * 2.5, r * 2.5, null, Ui.withAlpha(sec, 200)));
-        if (tier >= 2) add(Ui.oval(-r * 1.4, -r * 1.4, r * 2.8, r * 2.8, null, Ui.withAlpha(pri, 160)));
-        // Base plate
-        add(Ui.oval(-r, -r, r * 2, r * 2, Ui.c(0x0b0e14, temp ? 120 : 220), Ui.c(0x3b4556)));
-        // Faction silhouette
-        GObject body = silhouette(type.faction, r * 0.82, pri, sec);
-        add(body);
-        // Tier 2 side barrels
-        if (tier >= 2) {
-            GRect l = Ui.rect(-r * 1.05, -r * 0.25, r * 0.5, r * 0.5, sec, pri);
-            GRect rr = Ui.rect(r * 0.55, -r * 0.25, r * 0.5, r * 0.5, sec, pri);
-            add(l); add(rr);
+        art = TowerArtFactory.create(type, builtTier, r);
+        art.aim(aimAngle);
+        add(art);
+
+        // tier pips (4) under the plate
+        if (!temp) {
+            double pw = r * 0.34, ph = r * 0.18, gap = r * 0.1;
+            double x0 = -(4 * pw + 3 * gap) / 2;
+            for (int i = 0; i < 4; i++) {
+                Color fill = i < builtTier ? (builtTier >= 4 ? Art.GOLD : Ui.GREEN) : PIP_OFF;
+                add(Ui.rect(x0 + i * (pw + gap), r * 1.22, pw, ph, fill, Art.INK));
+            }
         }
-        // Turret
-        turret = new GPolygon(0, 0);
-        double tl = r * (1.1 + 0.25 * tier);
-        turret.addVertex(-r * 0.22, 0);
-        turret.addVertex(r * 0.22, 0);
-        turret.addVertex(r * 0.16, -tl);
-        turret.addVertex(-r * 0.16, -tl);
-        turret.setFilled(true);
-        turret.setFillColor(tier >= 4 ? Ui.GOLD : sec);
-        turret.setColor(Ui.c(0x0b0e14));
-        turret.rotate(-Math.toDegrees(turretAngle) - 90);
-        add(turret);
-        // Core
-        add(Ui.oval(-r * 0.3, -r * 0.3, r * 0.6, r * 0.6, tier >= 4 ? Ui.GOLD : sec, Ui.c(0x0b0e14)));
-        // Superclass crown
-        if (tier >= 4) {
-            GPolygon crown = new GPolygon(0, -r * 1.05);
-            crown.addVertex(-r * 0.55, 0); crown.addVertex(-r * 0.3, -r * 0.45); crown.addVertex(0, -r * 0.1);
-            crown.addVertex(r * 0.3, -r * 0.45); crown.addVertex(r * 0.55, 0);
-            crown.setFilled(true); crown.setFillColor(Ui.GOLD); crown.setColor(Ui.c(0x7a5a00));
-            add(crown);
-        }
-        // Tier pips
-        for (int i = 0; i < 4; i++) {
-            GRect pip = Ui.rect(-r * 0.85 + i * r * 0.45, r * 1.1, r * 0.34, r * 0.22,
-                i < tier ? Ui.GREEN : Ui.c(0x2a3140), Ui.c(0x0b0e14));
-            add(pip);
-        }
-        // Hero star badge
+        // hero star badge
         if (type.isHero()) {
-            GPolygon star = new GPolygon(r * 0.9, -r * 0.9);
+            GPolygon star = new GPolygon();
             for (int i = 0; i < 10; i++) {
                 double ang = -Math.PI / 2 + i * Math.PI / 5;
-                double rad = (i % 2 == 0) ? r * 0.42 : r * 0.18;
-                star.addVertex(Math.cos(ang) * rad, Math.sin(ang) * rad);
+                double rad = (i % 2 == 0) ? r * 0.38 : r * 0.16;
+                star.addVertex(r * 1.0 + Math.cos(ang) * rad, -r * 1.0 + Math.sin(ang) * rad);
             }
-            star.setFilled(true); star.setFillColor(Ui.GOLD); star.setColor(Ui.c(0x7a5a00));
+            star.setFilled(true); star.setFillColor(Art.GOLD); star.setColor(Art.GOLD_DARK);
             add(star);
         }
-        // Ability-ready ring + cooldown bar
-        abilityRing = Ui.oval(-r * 1.15, -r * 1.15, r * 2.3, r * 2.3, null, Ui.withAlpha(Ui.GOLD, 220));
+        // ability-ready ring + cooldown bar
+        abilityRing = Ui.oval(-r * 1.3, -r * 1.3, r * 2.6, r * 2.6, null, Ui.withAlpha(Ui.GOLD, 220));
         abilityRing.setVisible(false);
         add(abilityRing);
-        cdBack = Ui.rect(-r, -r * 1.55, r * 2, 4, Ui.c(0x0b0e14, 200), null);
-        cdBar = Ui.rect(-r, -r * 1.55, r * 2, 4, Ui.GOLD, null);
+        cdBack = Ui.rect(-r, -r * 1.6, r * 2, 4, Ui.c(0x0b0e14, 200), null);
+        cdBar = Ui.rect(-r, -r * 1.6, r * 2, 4, Ui.GOLD, null);
         cdBack.setVisible(false); cdBar.setVisible(false);
         add(cdBack); add(cdBar);
-        // Surveillance ring + mark
-        surveilRing = Ui.oval(-r * 1.6, -r * 1.6, r * 3.2, r * 3.2, Ui.c(0xff2020, 50), Ui.c(0xff4040));
+        // surveillance ring + mark
+        surveilRing = Ui.oval(-r * 1.7, -r * 1.7, r * 3.4, r * 3.4, Ui.c(0xff2020, 50), Ui.c(0xff4040));
         surveilRing.setVisible(false);
         add(surveilRing);
-        mark = Ui.label("!", -4, -r * 1.7, Ui.F_H2, Ui.RED);
+        mark = Ui.label("!", -4, -r * 1.8, Ui.F_H2, Ui.RED);
         mark.setVisible(false);
         add(mark);
-        if (!temp) {
-            GLabel name = Ui.label(type.displayName, 0, r * 1.95, Ui.F_TINY, Ui.withAlpha(Ui.TEXT, 190));
-            name.setLocation(-name.getWidth() / 2, r * 1.95);
-            add(name);
-        }
+        // No always-on name label: WorldView shows a hover / selection nameplate instead.
     }
 
-    private GObject silhouette(Faction f, double r, Color pri, Color sec) {
-        GPolygon p = new GPolygon(0, 0);
-        int n;
-        switch (f) {
-            case HERO: {
-                for (int i = 0; i < 10; i++) {
-                    double ang = -Math.PI / 2 + i * Math.PI / 5;
-                    double rad = (i % 2 == 0) ? r : r * 0.5;
-                    p.addVertex(Math.cos(ang) * rad, Math.sin(ang) * rad);
-                }
-                break;
-            }
-            case PRIMARY: {
-                GOval o = Ui.oval(-r, -r, 2 * r, 2 * r, pri, sec);
-                return o;
-            }
-            case MILITARY: n = 4; poly(p, n, r, Math.PI / 4); break;
-            case MAGIC: n = 4; poly(p, n, r, 0); break;
-            case SUPPORT: n = 6; poly(p, n, r, 0); break;
-            case TITAN: default: n = 8; poly(p, n, r, Math.PI / 8); break;
-        }
-        p.setFilled(true);
-        p.setFillColor(pri);
-        p.setColor(sec);
-        return p;
-    }
+    private static int clampTier(int t) { return Math.max(0, Math.min(4, t)); }
 
-    private static void poly(GPolygon p, int n, double r, double start) {
-        for (int i = 0; i < n; i++) {
-            double ang = start + i * 2 * Math.PI / n;
-            p.addVertex(Math.cos(ang) * r, Math.sin(ang) * r);
-        }
-    }
-
-    /** Per-frame update. */
+    /**
+     * Per-frame update.
+     *
+     * @param game        the simulation (may be null in galleries; an internal clock is used)
+     * @param dt          seconds since the previous frame
+     * @param telegraphed whether Palantir is about to target this tower
+     */
     public void sync(Game game, double dt, boolean telegraphed) {
-        if (tower.getTier() != builtTier) rebuild();
+        if (clampTier(tower.getTier()) != builtTier) rebuild();
         pulse += dt;
+        clock += dt;
+        double now = game != null ? game.getTime() : clock;
+        double r = tower.getRadius();
+
+        // aim at the last target while recently firing
         Enemy target = tower.getLastTarget();
-        if (target != null && target.isAlive() && game.getTime() - tower.getLastFireTime() < 1.5) {
+        double sinceFire = now - tower.getLastFireTime();
+        if (target != null && target.isAlive() && sinceFire < 1.5 && art.hasTurret()) {
             Vec d = target.getPosition().sub(tower.getPosition());
-            double want = Math.atan2(d.y, d.x);
-            double delta = want - turretAngle;
-            while (delta > Math.PI) delta -= 2 * Math.PI;
-            while (delta < -Math.PI) delta += 2 * Math.PI;
-            if (Math.abs(delta) > 0.001) {
-                turret.rotate(-Math.toDegrees(delta));
-                turretAngle = want;
+            if (d.length() > 0.5) {
+                double want = Math.atan2(d.y, d.x);
+                double delta = want - aimAngle;
+                while (delta > Math.PI) delta -= 2 * Math.PI;
+                while (delta < -Math.PI) delta += 2 * Math.PI;
+                double maxStep = SLEW_RATE * Math.max(dt, 1e-3);
+                if (Math.abs(delta) > maxStep) delta = Math.signum(delta) * maxStep;
+                aimAngle += delta;
+                while (aimAngle > Math.PI) aimAngle -= 2 * Math.PI;
+                while (aimAngle < -Math.PI) aimAngle += 2 * Math.PI;
+                art.aim(aimAngle);
             }
         }
-        if (glow.isVisible()) {
-            double a = 40 + 30 * Math.sin(pulse * 3);
-            glow.setFillColor(Ui.c(tower.getType().secondaryRgb, (int) a));
-        }
+        art.setFiring(sinceFire);
+        art.animate(now, dt);
+
         boolean ready = tower.getAbility() != null && tower.isAbilityReady() && !tower.isTemporary();
         abilityRing.setVisible(ready && (pulse % 1.0) < 0.6);
         boolean cooling = tower.getAbility() != null && !tower.isTemporary() && tower.getAbilityCooldownRemaining() > 0;
@@ -192,14 +146,18 @@ public final class TowerSprite extends GCompound {
         cdBar.setVisible(cooling);
         if (cooling) {
             double frac = 1 - tower.getAbilityCooldownFraction();
-            cdBar.setSize(Math.max(0.5, tower.getRadius() * 2 * frac), 4);
+            cdBar.setSize(Math.max(0.5, r * 2 * frac), 4);
         }
         boolean surveilled = tower.isSurveilled();
         surveilRing.setVisible(surveilled || telegraphed);
         if (surveilled) surveilRing.setFillColor(Ui.c(0xff2020, (int) (60 + 50 * Math.sin(pulse * 8))));
         else if (telegraphed) surveilRing.setFillColor(Ui.c(0xff8000, (int) (40 + 60 * Math.abs(Math.sin(pulse * 10)))));
-        mark.setVisible(telegraphed || surveilled);
-        mark.setLabel(surveilled ? "SURVEILLED" : "TARGETED");
-        if (telegraphed || surveilled) mark.setLocation(-mark.getWidth() / 2, -tower.getRadius() * 1.75);
+        boolean showMark = telegraphed || surveilled;
+        if (mark.isVisible() != showMark) mark.setVisible(showMark);
+        if (showMark) {
+            String want = surveilled ? "SURVEILLED" : "TARGETED";
+            if (!want.equals(mark.getLabel())) mark.setLabel(want);
+            mark.setLocation(-mark.getWidth() / 2, -r * 1.85);
+        }
     }
 }

@@ -117,11 +117,11 @@ public final class SidePanel extends GCompound {
                 if (c.firstOfFaction) {
                     cardLayer.add(Ui.label(t.faction.label, ShopLayout.CARDS_X + 2, c.y + 19, Ui.F_TINY, Ui.c(t.faction.rgb)));
                 }
-                icon = placeholderIcon(t, c.x + 4, c.y + 5, 18);
+                icon = shopIcon(t, c.x + 4, c.y + 5, 18);
                 name = Ui.label(fit(shortLabel(t), Ui.F_TINY, c.w - 30), c.x + 25, c.y + 12, Ui.F_TINY, Ui.TEXT);
                 price = Ui.label(Ui.money(d.baseCost), c.x + 25, c.y + 24, Ui.F_TINY, Ui.GOLD);
             } else {
-                icon = placeholderIcon(t, c.x + 8, c.y + 14, 28);
+                icon = shopIcon(t, c.x + 8, c.y + 14, 28);
                 name = Ui.label(t.displayName, c.x + 44, c.y + 22, Ui.F_BOLD, Ui.TEXT);
                 cardLayer.add(Ui.label(d.subtitle, c.x + 44, c.y + 37, Ui.F_TINY, Ui.MUTED));
                 price = Ui.label(Ui.money(d.baseCost), c.x + 44, c.y + 51, Ui.F_SMALL, Ui.GOLD);
@@ -143,9 +143,27 @@ public final class SidePanel extends GCompound {
         }
     }
 
-    /** Placeholder tower icon (to be replaced by TowerIcons.create(type, 0, size)). */
-    private static GObject placeholderIcon(TowerType t, double x, double y, double size) {
-        return Ui.oval(x, y, size, size, Ui.c(t.primaryRgb), Ui.c(t.secondaryRgb));
+    /** Shop icon: the tower's tier-0 art in a size x size box with top-left (x, y). */
+    private static GObject shopIcon(TowerType t, double x, double y, double size) {
+        ShopIcon icon = new ShopIcon(t, size);
+        icon.setLocation(x + size / 2, y + size / 2);
+        return icon;
+    }
+
+    /** Tower art icon with a translucent overlay that dims it when the tower is unaffordable. */
+    private static final class ShopIcon extends acm.graphics.GCompound {
+        private static final long serialVersionUID = 1L;
+        private final acm.graphics.GOval dim;
+
+        ShopIcon(TowerType t, double size) {
+            add(lindefense.ui.sprites.towers.TowerIcons.create(t, 0, size), 0, 0);
+            double r = size * 0.62;
+            dim = Ui.oval(-r, -r, 2 * r, 2 * r, Ui.c(0x0b0e14, 165), null);
+            dim.setVisible(false);
+            add(dim);
+        }
+
+        void setDimmed(boolean d) { dim.setVisible(d); }
     }
 
     /** Truncates text with an ellipsis so it fits maxWidth in the given font. */
@@ -180,8 +198,7 @@ public final class SidePanel extends GCompound {
             c.button.setEnabled(ok);
             c.price.setColor(ok ? Ui.GOLD : Ui.RED);
             c.name.setColor(ok ? Ui.TEXT : Ui.c(0x6b7585));
-            c.icon.setColor(ok ? Ui.c(c.cell.type.secondaryRgb) : Ui.c(0x3b4556));
-            if (c.icon instanceof acm.graphics.GFillable) ((acm.graphics.GFillable) c.icon).setFillColor(ok ? Ui.c(c.cell.type.primaryRgb) : Ui.withAlpha(Ui.c(c.cell.type.primaryRgb), 70));
+            if (c.icon instanceof ShopIcon) ((ShopIcon) c.icon).setDimmed(!ok);
         }
     }
 

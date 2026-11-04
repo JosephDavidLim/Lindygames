@@ -30,6 +30,8 @@ import lindefense.tower.TowerType;
 import lindefense.ui.sprites.Animated;
 import lindefense.ui.sprites.EnemySprite;
 import lindefense.ui.sprites.SpriteFactory;
+import lindefense.ui.sprites.towers.ProjectileSprite;
+import lindefense.ui.sprites.towers.ProjectileSprites;
 
 /**
  * Renders the playfield: map background and track, towers, enemies (via the
@@ -59,7 +61,7 @@ public final class WorldView extends GCompound {
     private final Map<Tower, TowerSprite> towerSprites = new HashMap<>();
     private final Map<Enemy, EnemySprite> enemySprites = new HashMap<>();
     private final Map<Enemy, GRect[]> hpBars = new HashMap<>();
-    private final Map<Projectile, GOval> projectileDots = new HashMap<>();
+    private final Map<Projectile, ProjectileSprite> projectileSprites = new HashMap<>();
     private final List<Effect> effects = new ArrayList<>();
     private final List<Animated> animated = new ArrayList<>();
     private final List<GObject> telegraphLines = new ArrayList<>();
@@ -255,19 +257,19 @@ public final class WorldView extends GCompound {
     }
 
     private void syncProjectiles() {
+        double now = game.getTime();
         for (Projectile p : game.getCombat().getProjectiles()) {
-            GOval dot = projectileDots.get(p);
-            if (dot == null) {
-                double s = p.getSize();
-                dot = Ui.oval(0, 0, s * 2, s * 2, Ui.c(p.getRgb()), Ui.c(0xffffff, 200));
-                projectileDots.put(p, dot);
-                projectileLayer.add(dot);
+            ProjectileSprite s = projectileSprites.get(p);
+            if (s == null) {
+                s = ProjectileSprites.create(p);
+                projectileSprites.put(p, s);
+                projectileLayer.add(s);
             }
-            dot.setLocation(p.getPosition().x - p.getSize(), p.getPosition().y - p.getSize());
+            s.sync(p, now);
         }
-        Iterator<Map.Entry<Projectile, GOval>> it = projectileDots.entrySet().iterator();
+        Iterator<Map.Entry<Projectile, ProjectileSprite>> it = projectileSprites.entrySet().iterator();
         while (it.hasNext()) {
-            Map.Entry<Projectile, GOval> en = it.next();
+            Map.Entry<Projectile, ProjectileSprite> en = it.next();
             if (!en.getKey().isAlive()) { projectileLayer.remove(en.getValue()); it.remove(); }
         }
     }
@@ -281,6 +283,16 @@ public final class WorldView extends GCompound {
     private void consumeEvents() {
         for (VisualEvent ev : game.drainEvents()) {
             if (effects.size() >= MAX_EFFECTS && ev.kind != VisualEvent.Kind.PHASE && ev.kind != VisualEvent.Kind.BANNER) continue;
+            if (ev.kind == VisualEvent.Kind.BEAM || ev.kind == VisualEvent.Kind.CHAIN
+                    || ev.kind == VisualEvent.Kind.HIT || ev.kind == VisualEvent.Kind.EXPLOSION) {
+                if (animated.size() >= MAX_EFFECTS) continue;
+                Animated fx = ProjectileSprites.createAttackEffect(ev);
+                if (fx != null) {
+                    effectLayer.add((GObject) fx);
+                    animated.add(fx);
+                    continue;
+                }
+            }
             Color col = Ui.c(ev.rgb);
             GObject o = null;
             switch (ev.kind) {
