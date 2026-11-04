@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class GameApp extends GraphicsProgram implements Navigator {
     private static final long serialVersionUID = 1L;
     private static final long FRAME_MS = 33;
-    private static final File SAVE = new File("progress.txt");
+    private static final File SAVE = new File(System.getProperty("save.file", "progress.txt"));
 
     private final ConcurrentLinkedQueue<double[]> clicks = new ConcurrentLinkedQueue<>();
     private final ConcurrentLinkedQueue<int[]> keys = new ConcurrentLinkedQueue<>();

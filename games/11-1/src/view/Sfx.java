@@ -58,7 +58,7 @@ public final class Sfx {
     }
 
     private static boolean load(String name) {
-        File f = new File("res/sfx/" + name + ".wav");
+        File f = Assets.gameFile("res/sfx/" + name + ".wav");
         if (!f.exists()) {
             DATA.put(name, null);
             return false;

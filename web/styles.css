@@ -114,6 +114,7 @@ section > * { max-width: 1180px; margin-inline: auto; }
 .cmd button { appearance: none; background: var(--panel-2); border: 0; border-left: 1px solid var(--line); color: var(--cyan); padding: 0 14px; cursor: pointer; font: 500 12px "IBM Plex Mono", monospace; }
 .cmd button:hover { background: var(--line); }
 .more { font-weight: 500; }
+.btn.play { margin-bottom: 12px; text-align: center; }
 .repo { display: table; margin-top: 26px; }
 
 footer { padding: 28px var(--gutter) 40px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }

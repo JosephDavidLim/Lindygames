@@ -33,6 +33,18 @@ public final class Assets {
     }
 
     /**
+     * Finds a game file. The website sets game.dir, because a browser has no
+     * current folder. On a desktop the path stays relative to the project.
+     *
+     * @param path path inside the project, for example "res/ui/title.png"
+     * @return the file
+     */
+    public static File gameFile(String path) {
+        String dir = System.getProperty("game.dir");
+        return dir == null ? new File(path) : new File(dir, path);
+    }
+
+    /**
      * Gets a defender's picture.
      *
      * @param type the defender
@@ -276,7 +288,7 @@ public final class Assets {
 
     private static BufferedImage rawImage(String path) {
         if (!RAW.containsKey(path)) {
-            File f = new File(path);
+            File f = gameFile(path);
             BufferedImage img = null;
             try {
                 img = f.exists() ? ImageIO.read(f) : null;
@@ -313,7 +325,7 @@ public final class Assets {
         }
         BufferedImage raw = RAW.get(path);
         if (raw == null && !RAW.containsKey(path)) {
-            File f = new File(path);
+            File f = gameFile(path);
             try {
                 raw = f.exists() ? ImageIO.read(f) : null;
             } catch (IOException e) {

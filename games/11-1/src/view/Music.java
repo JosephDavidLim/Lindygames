@@ -115,7 +115,7 @@ public final class Music {
         if (DATA.containsKey(name)) {
             return DATA.get(name) != null;
         }
-        File f = new File("res/music/" + name + ".wav");
+        File f = Assets.gameFile("res/music/" + name + ".wav");
         if (!f.exists()) {
             DATA.put(name, null);
             return false;
