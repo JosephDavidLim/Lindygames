@@ -16,21 +16,94 @@ data classes and documented in [DESIGN.md](DESIGN.md), which is generated from t
 
 ## 1. Setup
 
-Requirements:
+### Quick start (macOS / Linux)
 
-- JDK 11 or newer on your `PATH` (`javac` / `java`). Developed and tested with JDK 24 on macOS.
-- `lib/acm.jar` - the Stanford/ACM Java Task Force graphics library (included in this repository).
+Copy-paste this whole block into a terminal:
 
-If `lib/acm.jar` is ever missing, download the canonical JTF build and place it at `lib/acm.jar`:
-
+```bash
+git clone https://github.com/hanb0i/Lindefense.git
+cd Lindefense
+./setup.sh      # finds or installs a compatible JDK, checks lib/acm.jar, builds, runs the tests
+./run.sh        # launch the game
 ```
+
+`setup.sh` is safe to re-run. It:
+
+1. Looks for a JDK **11-25** (`$JAVA_HOME`, then `~/.jdks/*`, then `/usr/libexec/java_home` on macOS,
+   then `javac` on your `PATH`). If none is found, it downloads **Eclipse Temurin JDK 21** into
+   `~/.jdks/`. It needs no `sudo` and no Homebrew, and it doesn't change your system Java.
+2. Downloads `lib/acm.jar` if it is missing (the jar is already committed, so normally nothing is downloaded).
+3. Builds into `build/` and runs the headless test suite. The last line should read `Passed: N  Failed: 0`.
+
+> **Why not the newest Java?** `acm.jar`'s `GraphicsProgram` extends `javax.swing.JApplet`, and the
+> Applet API was removed in **JDK 26**. On JDK 26+ the build fails with
+> `cannot access JApplet ... class file for javax.swing.JApplet not found`. Keep your newer JDK
+> installed if you like: `build.sh` / `run.sh` / `test.sh` pick a compatible JDK automatically
+> (see `scripts/java-env.sh`).
+
+### Manual JDK install (if you'd rather not use `setup.sh`)
+
+```bash
+# macOS with Homebrew
+brew install --cask temurin@21
+
+# Ubuntu / Debian
+sudo apt-get update && sudo apt-get install -y openjdk-21-jdk
+
+# Fedora
+sudo dnf install -y java-21-openjdk-devel
+
+# Any OS with SDKMAN (https://sdkman.io)
+sdk install java 21-tem
+```
+
+Then confirm the JDK and point the scripts at it if it isn't the default:
+
+```bash
+javac -version                                   # expect javac 11 - 25
+export JAVA_HOME=$(/usr/libexec/java_home -v 21)  # macOS only; on Linux use the JDK's install dir
+```
+
+### Windows (PowerShell)
+
+```powershell
+winget install EclipseAdoptium.Temurin.21.JDK
+# open a NEW terminal so PATH / JAVA_HOME refresh, then:
+git clone https://github.com/hanb0i/Lindefense.git
+cd Lindefense
+.\test.bat
+.\run.bat
+```
+
+If you also have JDK 26+ installed, set `JAVA_HOME` to the JDK 21 folder first (the `.bat` scripts
+put `%JAVA_HOME%\bin` at the front of `PATH`):
+
+```powershell
+$env:JAVA_HOME = (Get-ChildItem "C:\Program Files\Eclipse Adoptium\jdk-21*" | Select-Object -First 1).FullName
+```
+
+### The ACM graphics library
+
+`lib/acm.jar` (the Stanford/ACM Java Task Force graphics library) is included in the repository.
+If it is ever missing, `setup.sh` re-downloads it. To do it by hand:
+
+```bash
 mkdir -p lib
 curl -L -o lib/acm.jar https://cs.stanford.edu/people/eroberts/jtf/acm.jar
 unzip -l lib/acm.jar | grep GraphicsProgram      # should list acm/program/GraphicsProgram.class
 ```
 
-(Any CS106A course distribution of `acm.jar` also works.) No other dependencies, build tools or
-network access are needed.
+(Any CS106A course copy of `acm.jar` also works.) There are no other dependencies or build tools.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `cannot access JApplet` / `class file for javax.swing.JApplet not found` | You are on JDK 26+. Run `./setup.sh`, or set `JAVA_HOME` to a JDK 11-25 |
+| `No compatible JDK found` | Run `./setup.sh`, or install JDK 21 using one of the commands above |
+| `lib/acm.jar is missing` | Run `./setup.sh`, or use the `curl` command above |
+| `permission denied: ./run.sh` | `chmod +x *.sh` |
+| Window doesn't open over SSH / in CI | Expected: the game needs a display. `./test.sh` runs headless |
 
 ## 2. Build and run
 
@@ -50,7 +123,8 @@ run.bat
 test.bat
 ```
 
-Manual equivalents:
+Manual equivalents. If `java -version` shows JDK 26 or newer, first run
+`export JAVA_HOME="$(scripts/java-env.sh)" && export PATH="$JAVA_HOME/bin:$PATH"` in that terminal:
 
 ```
 javac -d build -cp lib/acm.jar @<(find src -name '*.java')      # or list the files
@@ -167,10 +241,12 @@ src/lindefense/
   wave/     WaveData (all 100 waves), WaveDef, SpawnGroup, WaveManager
   ui/       LindefenseProgram (ACM GraphicsProgram), ScaledLayer (resize scaling), GameScreen, WorldView,
             HudPanel, SidePanel, TowerSprite, MenuScreen, MapSelectScreen, UIButton, Ui, DemoDriver
-  ui/sprites/  enemy and boss character sprites (EnemySprite, SpriteFactory, Animated)
+  ui/sprites/  PLACEHOLDER enemy sprites (EnemySprite, SpriteFactory, Animated); see section 10
   test/     HeadlessTests - verification suite run without a window
   tools/    DesignDocGenerator (DESIGN.md), AutoPlayer (balance bot)
 lib/acm.jar
+setup.sh                      one-shot setup: JDK check/install, acm.jar check, build + tests
+scripts/java-env.sh           picks a JDK 11-25 for the shell scripts (JDK 26+ removed JApplet)
 build.sh / run.sh / test.sh   (and .bat equivalents)
 ```
 
@@ -186,6 +262,192 @@ Regrow, every splitter's children, boss children, all 100 wave compositions (inc
 Wave 100), Palantir's phases and Predictive Surveillance, ability cooldowns, traversal of every
 route on all four maps, map mechanics, win and loss conditions, and a late-wave stress run.
 
-`java -Dlindefense.demo=<dir> -cp build:lib/acm.jar lindefense.Main` runs a scripted UI walkthrough
+`JAVA_OPTS="-Dlindefense.demo=<dir>" ./run.sh` runs a scripted UI walkthrough
 (menu -> map select -> game -> window resizes -> Palantir) that writes PNG snapshots and verifies
 click-to-place after resizing.
+
+## 10. Replacing the placeholder sprites
+
+The towers, enemies and their stats are final, so `TowerType`, `TowerCatalog` and `EnemyType` don't
+change. Every tower and enemy already has its look defined in the design spec (the "Lindefense" master
+prompt: §14A *Unique Enemy Character and Model Design* and the *Tower Visual Design* list). Those
+definitions are copied into the tables below. The game currently draws stand-ins instead of those
+designs, and the job is to replace them. All of the work is in `src/lindefense/ui/`; the simulation
+packages (`sim`, `map`, `enemy`, `tower`, `combat`, `wave`) stay untouched.
+
+### What is a placeholder today
+
+| File | Draws today | Should draw |
+|---|---|---|
+| `src/lindefense/ui/sprites/SpriteFactory.java` | Every enemy and boss as the same orange circle (turns red as HP drops, fades when camo) | A character per enemy type ([enemy tables](#enemy-sprites)) |
+| `SpriteFactory.createDeathEffect` / `createSplitEffect` | One expanding ring | A pop effect, and splitting enemies visibly coming apart into their children |
+| `src/lindefense/ui/SidePanel.java` → `placeholderIcon(...)` | Shop icons as plain two-colour ovals | `TowerIcons.create(type, 0, size)`, a new class (it doesn't exist yet) drawing each tower at icon size |
+| `src/lindefense/ui/TowerSprite.java` → `silhouette(...)` | One body shape per faction (all three Primary towers are the same circle) | Each tower's own look ([tower table](#tower-sprites)) |
+
+`TowerSprite` is otherwise finished. Keep its tier hardware (rings, side barrels, longer turret,
+superclass glow and crown), tier pips, hero star, ability ring, cooldown bar and Surveillance warning,
+and replace only the body and turret art. `EnemySprite.java` and `Animated.java` are also marked
+placeholder, but they are the interfaces `WorldView` calls, so keep their method signatures.
+
+### Workflow
+
+```bash
+./setup.sh                      # once per machine: JDK + acm.jar + build + tests
+./build.sh && ./run.sh          # rebuild after every edit, then play
+
+# scripted walkthrough: writes PNG snapshots to build/snapshots, then exits on its own
+./build.sh && JAVA_OPTS="-Dlindefense.demo=build/snapshots" ./run.sh
+open build/snapshots            # macOS (Linux: xdg-open build/snapshots)
+
+./test.sh                       # must still end with "Failed: 0"
+```
+
+The snapshots that show sprites:
+
+- `03_game_default.png`: GPT, Claude, Perplexity, Brad Lindemann and Suno at tier 0, plus the 28 px shop icons on the Primary tab.
+- `03b_shop_all.png`: all 20 shop icons at 18 px.
+- `06_palantir.png`: tier-3 towers, Palantir, and a Bellarmine College Prep. This is the only snapshot with enemies in it.
+
+No snapshot shows the ordinary enemies, so check those in a real game (`./run.sh`, pick a map, `Space`
+starts a wave, `3` sets 3x speed). Wave 1 is Primitive Variables, and the sorting algorithms start at
+wave 20. The wave table in `DESIGN.md` lists what each wave spawns.
+
+`./build.sh` deletes `build/` and `build/` is git-ignored, so old snapshots are cleared on every
+rebuild and never get committed. Don't run two builds in the same folder at once: the second one
+deletes the first one's `build/` mid-run.
+
+### Rules (from the spec)
+
+- **Original art only.** Draw with ACM shapes (`GOval`, `GRect`, `GPolygon`, `GLine`, `GArc`, `GLabel`)
+  grouped in a `GCompound`. Don't copy Bloons TD sprites or use real company logos. PNG images through
+  `GImage` are allowed if every enemy type gets its own image and the files are committed to the repo
+  (relative paths, nothing downloaded at runtime).
+- **Build once, then mutate.** Create every shape in the constructor. `sync()` and `step()` only move,
+  recolour, show or hide existing shapes. Late waves have about 95 enemies on screen at once, so
+  creating objects per frame causes stutter.
+- **Only `GPolygon` can rotate** in this `acm.jar` (`GCompound`, `GImage`, `GOval` and `GRect` can't).
+  Anything that turns to face a target or the direction of travel has to be a `GPolygon`, like the
+  existing turret.
+- **Match the hitbox.** Draw centred on (0, 0) and size the body from `e.getRadius()` (radius column
+  below) so what players see is what towers hit. Bosses must be clearly larger and more detailed than
+  ordinary enemies.
+- **Read-only.** Sprite code reads `Enemy`/`Tower` state and never changes it.
+- **One art style.** Use the same outline weight, light direction and proportions for every enemy.
+- **No duplicates.** `WorldView` already draws HP bars (enemies with 4+ max HP), boss health bars,
+  range circles and projectiles.
+- **Readable when small.** Shop icons are 18 px (ALL grid) and 28 px (faction tabs). The smallest
+  enemy, Primitive Variable, has a 9 px radius.
+
+### The interface `WorldView` and `SidePanel` call
+
+```java
+// When an enemy first appears (once), then every frame:
+EnemySprite s = SpriteFactory.create(enemy);   // build the whole character here
+s.sync(enemy, timeSeconds);                    // setLocation(enemy.getPosition()), update state visuals
+s.step(dt);                                    // advance animation (return value ignored for enemies)
+
+// When an enemy dies (not when it leaks):
+Animated fx = enemy.getType().hasChildren()
+        ? SpriteFactory.createSplitEffect(enemy)
+        : SpriteFactory.createDeathEffect(enemy);
+// fx must also be a GObject (e.g. extend GCompound) or it is never shown.
+// step(dt) runs every frame until it returns false, then fx is removed.
+
+// Shop cards (replaces placeholderIcon in SidePanel):
+GObject icon = TowerIcons.create(type, 0, size); // draw inside a size x size box, top-left at (0, 0)
+icon.setLocation(x, y);
+```
+
+A simple structure is one `EnemySprite` subclass per enemy type in `src/lindefense/ui/sprites/`, with
+`SpriteFactory.create` switching on `e.getType()`.
+
+State a sprite can read (methods on `Enemy` unless noted):
+
+| To show | Read |
+|---|---|
+| Position and heading | `getPosition()`, `getRoute().directionAt(getDistance())` |
+| Damage state | `getHpFraction()`, `getHp()`, `getMaxHp()`, `getLastHitTime()` |
+| Modifiers | `isCamo()`, `isRevealed()`, `isRegrow()`, `isFortified()` (Qwen can strip Fortified mid-wave) |
+| Status effects | `isStunned()`, `getSlowFraction()`, `isDisrupted()`, `getMarkedBonus()` |
+| Mechanics | `getAccelBonus()` (Doubly Linked List), `currentShellGap()` (Shell Sort), `radixPhase()` 0-3 (Radix Sort), `getStoredEnemies()` (Bucket Sort) |
+| Boss state (cast to `Boss`) | `getPhase()`, `getPhaseCount()`, `getPhaseName()`, `isPalantir()`, `isTelegraphing()` |
+
+### Enemy sprites
+
+| `EnemyType` | Radius | Spec design | Mechanic the art should hint at |
+|---|---|---|---|
+| `PRIMITIVE_VARIABLE` | 9 | A small, simple data orb | - |
+| `STATIC_ARRAY` | 12 | An orderly segmented container | Releases 1 Primitive Variable |
+| `DYNAMIC_ARRAY` | 14 | An expandable, growing container | Releases 1 Static Array |
+| `SINGLY_LINKED_LIST` | 13 | Connected nodes with one-directional links | Very fast |
+| `DOUBLY_LINKED_LIST` | 14 | Connected nodes with two-directional links | Speeds up when damaged |
+| `BUBBLE_SORT` | 15 | A bubbly character that visibly swaps positions | Swaps with the enemy ahead |
+| `SELECTION_SORT` | 15 | A selection indicator or targeting motif | Jumps to the front of its group |
+| `INSERTION_SORT` | 14 | A character that slides between other enemies | Leapfrogs the enemy ahead |
+| `SHELL_SORT` | 15 | Segmented shells or gap-jumping effects | Gap jumps of 140 / 70 / 35 / 18 px |
+| `MERGE_SORT` | 17 | A character that visibly divides into two | Splits into 2 Merge Runs |
+| `MERGE_RUN` | 11 | *Not in the spec (split child):* half of a Merge Sort | - |
+| `QUICK_SORT` | 17 | A partition-themed character that splits into two groups | Splits into 2 Quick Partitions |
+| `QUICK_PARTITION` | 12 | *Not in the spec (split child):* one side of a Quick Sort | - |
+| `HEAP_SORT` | 19 | A tree- or hierarchy-shaped armoured character | Physical-immune; shields enemies behind it |
+| `COUNTING_SORT` | 16 | Four visible counters or nodes | Releases 4 Primitive Variables |
+| `RADIX_SORT` | 18 | Changing digit-based armour | Armour type changes every 2 layers |
+| `BUCKET_SORT` | 19 | A bucket shape that visibly stores other enemies | Holds up to 6 weaker enemies |
+| `TIMSORT` | 19 | A hybrid of insertion-sort and merge-sort visuals | Splits into a Merge Sort and an Insertion Sort |
+
+Bosses (the spec requires each to be much larger and more detailed than ordinary enemies):
+
+| `EnemyType` | Class | Radius | Spec design |
+|---|---|---|---|
+| `BELLARMINE_COLLEGE_PREP` | MOAB | 34 | Heavy MOAB-style armoured design |
+| `SW_RESOURCE_CONSULTANT` | BFB | 42 | Large, reinforced BFB-style design |
+| `THREE_COM` | ZOMG | 52 | Massive ZOMG-style design |
+| `LOCKHEED_MARTIN` | DDT | 30 | Fast, stealth-oriented DDT-style design (always camo) |
+| `PALANTIR` | BAD | 64 | Enormous, intimidating corporate airship with a surveillance and predictive-intelligence look. It has three phases, telegraphs Predictive Surveillance, and needs a dramatic entrance and defeat |
+
+Modifiers and damage apply to every enemy, bosses included:
+
+- **Camo:** semi-transparent or cloaked.
+- **Regrow:** a regenerating effect, such as glowing growth or segments restoring.
+- **Fortified:** visible armour plating, metal reinforcement or a protective shell.
+- An enemy with several modifiers shows all of them at once, without losing its own identity.
+- Losing HP or layers visibly changes the enemy, and splitting enemies visibly separate into their child characters.
+
+### Tower sprites
+
+Colours are already set in `TowerType` (`primaryRgb` fill / `secondaryRgb` accent). Looks are from the
+spec's *Tower Visual Design* list:
+
+| `TowerType` | Fill / accent | Spec look |
+|---|---|---|
+| `BELLARMINE_STUDENT` | `0xd8d8d8` / `0x1b3a6b` | *Not in the list:* student hero who throws chemistry textbooks and pencils |
+| `BELLARMINE_STUDENT_AI` | `0x9fd3ff` / `0x1b3a6b` | *Not in the list:* student with an autonomous AI assistant, firing laser-etched notes |
+| `BRAD_LINDEMANN` | `0xffd700` / `0x111111` | Gold-and-black plasma fortress (listed as "Lindeman") |
+| `GEMINI` | `0x4f7cff` / `0x9b5cff` | Blue-purple dual barrel |
+| `CLAUDE` | `0xe88a4a` / `0xf3d9c4` | Warm orange boomerang launcher |
+| `GPT` | `0x10a37f` / `0xffffff` | Green and white energy turret |
+| `DEEPSEEK` | `0x1f3b8f` / `0x4d7cff` | Dark blue precision cannon |
+| `COPILOT` | `0x2f7fe0` / `0xb8dcff` | Blue automated machine gun |
+| `DALLE` | `0xffb347` / `0x5bc0eb` | *Not in the list:* "Sketch Summoner" that paints splash zones and summons illustrated creatures |
+| `SORA` | `0x8fd3ff` / `0xffffff` | Light blue projector cannon |
+| `SUNO` | `0xff5fa2` / `0xffd1e6` | Pink soundwave speaker |
+| `GROK` | `0x151515` / `0xff7a00` | Black and neon orange rapid-fire tower |
+| `PERPLEXITY` | `0x20b2aa` / `0xe0fffa` | Turquoise radar turret |
+| `QWEN` | `0x7b3fe4` / `0xd9c6ff` | Violet compact dart turret |
+| `LLAMA` | `0xf2c94c` / `0x8a5a2b` | Yellow multi-barrel tower |
+| `MISTRAL` | `0x2bb3a3` / `0xd8fff6` | Teal wind launcher |
+| `COHERE` | `0xff7f6e` / `0xffe3de` | Coral support beacon |
+| `GLM` | `0x19e6ff` / `0x0a2a3a` | Electric cyan coil |
+| `KIMI` | `0x3d3fa8` / `0xc6c7ff` | Indigo sniper tower |
+| `MINIMAX` | `0xe03131` / `0xffd6d6` | Red explosive turret |
+| `DALLE_SPRITE` | `0xffe08a` / `0x5bc0eb` | DALL·E's summoned "painted familiar" (not sold in the shop) |
+
+The three heroes and DALL·E are missing from the spec's visual list, so their rows above come from
+their tower write-ups in the spec. A few looks in the list also predate the final mechanics. For
+example, Claude is drawn as a "boomerang launcher" but fires piercing shots in-game, so agree with the
+team on which one the art follows.
+
+Upgrades: the spec requires every upgrade to visibly transform the tower, with a larger or more
+elaborate barrel, brighter accents, extra rings or antennas, small tier indicators and better firing
+effects. `TowerSprite.rebuild()` runs once per tier change, so add per-tier detail there and only
+update existing shapes in `sync()`. Shop icons (`TowerIcons`) show tier 0.

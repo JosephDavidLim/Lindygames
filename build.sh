@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Compiles all Java sources into ./build (requires JDK 11+ and lib/acm.jar).
+# Compiles all Java sources into ./build (requires JDK 11-25 and lib/acm.jar).
 set -euo pipefail
 cd "$(dirname "$0")"
+source scripts/java-env.sh
+lindefense_require_jdk
 if [ ! -f lib/acm.jar ]; then
   echo "lib/acm.jar is missing. See README.md (Setup) for how to obtain it." >&2
   exit 1

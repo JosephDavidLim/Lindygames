@@ -1,6 +1,7 @@
 @echo off
-REM Compiles all Java sources into .\build (requires JDK 11+ and lib\acm.jar).
+REM Compiles all Java sources into .\build (requires JDK 11-25 and lib\acm.jar).
 cd /d %~dp0
+if defined JAVA_HOME set "PATH=%JAVA_HOME%\bin;%PATH%"
 if not exist lib\acm.jar (
   echo lib\acm.jar is missing. See README.md ^(Setup^) for how to obtain it.
   exit /b 1
