@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lindygames</title>
+<meta name="description" content="The year is 2100. Assignments have become physical constructs, born from the fear of people around the world. People and AI are evolving to defeat them.">
+<meta name="theme-color" content="#05060f">
+<meta property="og:title" content="Lindygames">
+<meta property="og:description" content="In 2100, assignments have bodies. People and AI are evolving to defeat them.">
+<meta property="og:image" content="assets/hall.jpg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#event">Skip to content</a>
+<canvas id="rain" aria-hidden="true"></canvas>
+
+<header class="bar">
+  <a class="mark" href="#top">LINDY<span>GAMES</span></a>
+  <nav aria-label="Sections">
+    <a href="#event">2100</a>
+    <a href="#constructs">Constructs</a>
+    <a href="#evolve">Evolving</a>
+    <a href="#games">Games</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="kicker">Year 2100</p>
+      <h1>Assignments<br>have bodies now.</h1>
+      <p class="lede">For generations the world was afraid of them. Then the fear became matter. People and AI are evolving to fight back.</p>
+      <div class="actions">
+        <a class="btn primary" href="#games">See the games</a>
+        <a class="btn" href="#constructs">Scan the constructs</a>
+      </div>
+    </div>
+    <p class="status" aria-hidden="true"><i></i>Fear index rising</p>
+  </section>
+
+  <section id="event" class="event">
+    <h2 class="label">How it happened</h2>
+    <ol class="steps">
+      <li>
+        <span>01</span>
+        <h3>Fear</h3>
+        <p>Every deadline, every exam, every person in every country lying awake over a grade. A century of dread, logged and scored by systems that never forgot any of it.</p>
+      </li>
+      <li>
+        <span>02</span>
+        <h3>Form</h3>
+        <p>In 2100 it stopped being a feeling. Homework started walking. Report cards learned to hunt. Each assignment took the shape of what people feared most about it.</p>
+      </li>
+      <li>
+        <span>03</span>
+        <h3>Evolve</h3>
+        <p>You can't fail your way out of something made of fear. So people rebuilt themselves with constructed abilities, AI learned to fight, and they stood in the same line.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section id="constructs" class="constructs">
+    <div class="head">
+      <h2 class="label">Known constructs</h2>
+      <p>Pick one to see what it grew from.</p>
+    </div>
+    <div class="scanner">
+      <div class="grid" id="construct-grid" role="group" aria-label="Constructs"></div>
+      <article class="readout" id="construct-readout" aria-live="polite"></article>
+    </div>
+  </section>
+
+  <section id="evolve" class="evolve">
+    <h2 class="label">The ones evolving</h2>
+    <div class="tabs" role="tablist" aria-label="Sides">
+      <button role="tab" id="tab-people" aria-controls="panel-people" aria-selected="true">People</button>
+      <button role="tab" id="tab-ai" aria-controls="panel-ai" aria-selected="false" tabindex="-1">AI</button>
+    </div>
+
+    <div id="panel-people" role="tabpanel" aria-labelledby="tab-people">
+      <p class="intro">Seventeen classmates, each surgically fitted with an ability built for the fight. Pick one to read their construct.</p>
+      <div class="roster" id="roster" role="group" aria-label="Classmates"></div>
+      <p class="person-line" id="person-line" aria-live="polite"></p>
+    </div>
+
+    <div id="panel-ai" role="tabpanel" aria-labelledby="tab-ai" hidden>
+      <p class="intro">The other half of the front line. In Lindefense, AI models are deployed along a track to hold back computer-science constructs: data structures, sorting algorithms and corporate bosses.</p>
+      <ul class="facts">
+        <li><b>17</b><span>AI models and companies, deployed as towers</span></li>
+        <li><b>1</b><span>Zethos, the Quantum Architect</span></li>
+        <li><b>6</b><span>unlockable heroes in the Hero Store</span></li>
+        <li><b>100</b><span>waves, ending at the final boss, Palantir</span></li>
+      </ul>
+      <p class="callout">One tower is called Bellarmine Student + AI. That's the whole idea in one name.</p>
+    </div>
+  </section>
+
+  <section id="games" class="games">
+    <h2 class="label">Two fronts, two games</h2>
+    <p class="note">Both are desktop games written in Java with Stanford ACM Graphics, so they run on your computer rather than in this page. You'll need JDK 11 to 25.</p>
+    <div class="cards">
+      <article class="card">
+        <img src="assets/eleven.jpg" alt="Title screen of 11/1: an empty neon hallway with one figure at the far end" width="720" height="554" loading="lazy">
+        <div>
+          <h3>11/1</h3>
+          <p class="tag">Lane defense RPG. People.</p>
+          <p>Place classmates in lanes while you run, jump and climb as one of them. Between fights, walk the corridors of the Meridian Institute and uncover a fixed story about a system nobody leaves.</p>
+          <ul class="spec"><li>18 levels</li><li>6 floors</li><li>17 classmates</li></ul>
+          <div class="cmd"><code>cd games/11-1 &amp;&amp; ./run.sh</code><button type="button" data-copy="cd games/11-1 &amp;&amp; ./run.sh">Copy</button></div>
+          <a class="more" href="https://github.com/JosephDavidLim/Lindygames/tree/main/games/11-1">View the code</a>
+        </div>
+      </article>
+      <article class="card">
+        <img src="assets/lindefense.jpg" alt="Title screen of Lindefense: The Last Line of Code, with a neon city and grid" width="960" height="600" loading="lazy">
+        <div>
+          <h3>Lindefense</h3>
+          <p class="tag">Tower defense. AI.</p>
+          <p>Hold a track against 100 waves of computer science. Deploy, upgrade and combine AI towers and heroes, with a tutorial for new players and a catalog of every enemy.</p>
+          <ul class="spec"><li>100 waves</li><li>18 towers</li><li>6 heroes</li></ul>
+          <div class="cmd"><code>cd games/lindefense &amp;&amp; ./setup.sh &amp;&amp; ./run.sh</code><button type="button" data-copy="cd games/lindefense &amp;&amp; ./setup.sh &amp;&amp; ./run.sh">Copy</button></div>
+          <a class="more" href="https://github.com/JosephDavidLim/Lindygames/tree/main/games/lindefense">View the code</a>
+        </div>
+      </article>
+    </div>
+    <a class="btn primary repo" href="https://github.com/JosephDavidLim/Lindygames">Get both on GitHub</a>
+  </section>
+</main>
+
+<footer>
+  <p><b>Lindefense</b> &copy; 2026 Hanbo Song, with Austin Yoo, under the MIT License. Original repo: <a href="https://github.com/hanb0i/Lindefense">hanb0i/Lindefense</a>.</p>
+  <p><b>11/1</b> by Joseph David Lim and classmates. Fonts: Rajdhani, Barlow and IBM Plex Mono, under the SIL Open Font License.</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
