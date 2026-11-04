@@ -1,0 +1,20 @@
+# Original photos of classmates stay local and are never committed.
+art/source/
+art/preview/
+
+# Java build output
+out/
+bin/
+*.class
+
+# OS / IDE
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# Local save file
+progress.txt
+
+# Python
+__pycache__/
