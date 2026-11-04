@@ -10,7 +10,13 @@ the Institute with your squad, learning what it really is. You can't get out.
 - `acm.jar` (ACM Java Task Force library) placed in `lib/`
 
 ## Build and run
-From the project root:
+On Mac or Linux:
+
+```
+./run.sh
+```
+
+That builds the game and starts it. To do the same by hand, from the project root:
 
 ```
 javac -cp lib/acm.jar -d out $(find src -name "*.java")
