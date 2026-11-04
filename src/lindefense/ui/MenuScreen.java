@@ -38,6 +38,8 @@ public final class MenuScreen extends GCompound {
 
     private final Random rnd = new Random(7);
     private final List<NeonButton> buttons = new ArrayList<>();
+    private final List<UIButton> chips = new ArrayList<>();
+    private AudioToggle[] audioToggles;
     private final GCompound help = new GCompound();
     private boolean helpShown;
     private double t;
@@ -124,6 +126,9 @@ public final class MenuScreen extends GCompound {
         NeonButton how = new NeonButton(Ui.W / 2.0 - 150, 576, 300, 56, "HOW TO PLAY", bf, MAGENTA, this::toggleHelp);
         NeonButton quit = new NeonButton(Ui.W / 2.0 - 150, 652, 300, 56, "QUIT", bf, YELLOW, app::quit);
         for (NeonButton b : new NeonButton[] { play, how, quit }) { buttons.add(b); add(b); }
+        // AUDIO: Sound / Music toggles under the main buttons
+        audioToggles = AudioToggle.pair(Ui.W / 2.0 - 150, 728, 145, 38, 10, "SOUND", "MUSIC", chips);
+        for (UIButton c : chips) add(c);
 
         // ---- CRT overlay, HUD frame, readouts
         for (int y = 0; y < Ui.H; y += 4) {
@@ -262,12 +267,12 @@ public final class MenuScreen extends GCompound {
         double y = 146, x = Ui.W / 2.0 - 410;
         String[][] sections = {
             { "GOAL", "Survive all 100 waves and destroy Palantir, the BAD-class final boss, on Wave 100. You start with $650 and 100 lives." },
-            { "BUILDING", "Pick a faction tab (or press B for all towers), click a tower, then click a free spot beside the track. Each tower has an upgrade path named after its model lineup, an active ability with a cooldown, and several targeting priorities." },
+            { "BUILDING", "Pick a faction tab (or press B for all towers), click a tower, then click a free spot beside the track. Each tower has three upgrades named after its model lineup, an active ability with a radial cooldown (use the ability bar along the bottom of the map), and several targeting priorities. Heroes can only be placed once." },
             { "ECONOMY", "Enemies pay cash when destroyed; every wave pays a bonus. Perplexity earns research income. Selling refunds 70% of everything spent on a tower." },
-            { "ENEMIES", "Data structures and sorting algorithms, each with a mechanic: Bubble Sort swaps places, Heap Sort shields allies and is Physical-immune, Merge/Quick/Counting/TimSort split, Bucket Sort stores weaker enemies, Radix Sort changes armour, Shell Sort gap-jumps." },
-            { "MODIFIERS", "Camo enemies need detection (Perplexity, Bellarmine Student + AI, or Brad T3). Regrow enemies heal. Fortified enemies have double HP (Qwen strips it)." },
-            { "BOSSES", "Bellarmine College Prep (MOAB, wave 40), SW Resource Consultant (BFB, 60), 3Com (ZOMG, 80), Lockheed Martin (DDT, 90) and Palantir (BAD, 100), whose Predictive Surveillance disrupts your strongest towers - telegraphed for 3 s, blocked by Perplexity/Copilot/Student+AI/Brad auras, cleared by Brad's Command Override." },
-            { "CONTROLS", "Space: next wave.  1/2/3: speed.  P: pause.  B: all towers.  Esc / right-click: cancel.  U: upgrade.  S: sell.  A: ability.  T: targeting.  H: in-game help." },
+            { "ENEMIES", "Data structures and sorting algorithms, each with a mechanic: Bubble Sort swaps places, Heap Sort shields allies and is Lead-type (Sharp damage cannot hurt it), Merge/Quick/Counting/TimSort split, Bucket Sort stores weaker enemies, Radix Sort turns Lead-type in its armoured phases, Shell Sort gap-jumps." },
+            { "MODIFIERS", "Camo enemies need detection: built into Student + AI, Grok and Perplexity, gained by Gemini and Llama at their second upgrade, and shared by Perplexity with every tower in its radius. Regrow enemies heal. Fortified enemies have double HP (Qwen strips it)." },
+            { "BOSSES", "Bellarmine College Prep (MOAB, wave 40), SW Resource Consultant (BFB, 60), 3Com (ZOMG, 80), Lockheed Martin (DDT, 90) and Palantir (BAD, 100), whose Predictive Surveillance disrupts your strongest towers - telegraphed for 3 s, blocked for towers inside Perplexity's Predictive Analysis radius." },
+            { "CONTROLS", "Space: next wave.  1/2/3: speed.  P: pause.  B: all towers.  Esc / right-click: cancel (Esc with nothing selected opens the pause menu).  U: upgrade.  S: sell.  A: ability.  T: targeting.  H: in-game help.  M: music on/off.  N: sound on/off." },
         };
         Font hf = menuFont(Font.BOLD, 18), bf = Cyber.body(Font.PLAIN, 14);
         for (String[] s : sections) {
@@ -297,11 +302,13 @@ public final class MenuScreen extends GCompound {
 
     public void mousePressed(double lx, double ly) {
         skipIntro();
+        if (!helpShown) for (UIButton c : chips) if (c.hit(lx, ly)) { c.click(); return; }
         for (NeonButton b : buttons) if (b.hit(lx, ly) && b.isVisible() && (b.getParent() != help || helpShown)) { b.click(); return; }
     }
 
     public void mouseMoved(double lx, double ly) {
         for (NeonButton b : buttons) b.setHover(b.hit(lx, ly));
+        for (UIButton c : chips) c.setHover(c.hit(lx, ly));
     }
 
     private void setLetterStackVisible(int i, boolean v) {
@@ -319,6 +326,8 @@ public final class MenuScreen extends GCompound {
         animateBackdrop(dt);
         emblem.animate(t);
         for (NeonButton b : buttons) b.animate(dt);
+        AudioToggle.syncAll(audioToggles);
+        for (UIButton c : chips) c.animate(dt);
         sysLabel.setVisible(((int) (t * 1.6)) % 2 == 0 || t % 1 > 0.2);
         threatLabel.setColor(((int) (t * 2)) % 2 == 0 ? MAGENTA : Ui.withAlpha(MAGENTA, 120));
         verLabel.setColor(Ui.withAlpha(YELLOW, (int) (170 + 80 * Math.sin(t * 4))));

@@ -20,10 +20,8 @@ import lindefense.tower.Tower;
  *   <li>When the telegraph ends, marked towers that are not immune become
  *       <i>Surveilled</i> for {@link #SURVEIL_DURATION} s: -50% attack speed,
  *       -30% range, abilities locked.</li>
- *   <li>Counters: Perplexity (Encrypted Index), Copilot (Workspace Firewall),
- *       Bellarmine Student + AI (AGI Thesis) and Brad Lindemann (Supreme Commander)
- *       make towers in their aura immune; Brad's Command Override clears the
- *       effect instantly; selling and re-placing a tower also clears it.</li>
+ *   <li>Counters: Perplexity (Sonar Reasoning Pro, U2) makes towers in its radius immune;
+ *       upgrading, or selling and re-placing a tower also clears it.</li>
  * </ol>
  */
 public class Boss extends Enemy {
@@ -41,6 +39,7 @@ public class Boss extends Enemy {
     private final List<Tower> markedTowers = new ArrayList<>();
     private boolean entranceAnnounced;
     private int pendingPhaseEvent = -1;
+    private double shieldOffRemaining;
 
     public Boss(EnemyType type, EnumSet<Modifier> modifiers, Path route, int routeIndex, double distance,
                 double hpScale, double speedScale) {
@@ -56,11 +55,23 @@ public class Boss extends Enemy {
     public double getSurveillanceTimer() { return surveillanceTimer; }
     public List<Tower> getMarkedTowers() { return markedTowers; }
 
-    /** Phase 1 Palantir shrugs off slows, stuns and knockback. */
-    public boolean isControlImmune() { return isPalantir() && phase == 0; }
+    /** Phase 1 Palantir shrugs off slows, stuns and knockback (unless its phase shield is down). */
+    @Override public boolean isControlImmune() { return isPalantir() && phase == 0 && shieldOffRemaining <= 0; }
+
+    /**
+     * Qwen's Cosmic Sovereign Burst: Palantir loses its current <b>phase shield</b> for {@code seconds}.
+     * The phase shield is its phase armour (60% / 35% / 10%) and phase 1's immunity to slow, stun and
+     * knockback; while the shield is down armour is 0 and controls apply normally. No effect on other bosses.
+     */
+    public void disablePhaseShield(double seconds) {
+        if (isPalantir()) shieldOffRemaining = Math.max(shieldOffRemaining, seconds);
+    }
+    public boolean isPhaseShieldDown() { return shieldOffRemaining > 0; }
+    public double getPhaseShieldOffRemaining() { return shieldOffRemaining; }
 
     @Override protected double baseArmor() {
-        return isPalantir() ? PALANTIR_ARMOR[phase] : super.baseArmor();
+        if (!isPalantir()) return super.baseArmor();
+        return shieldOffRemaining > 0 ? 0 : PALANTIR_ARMOR[phase];
     }
 
     @Override protected double ownSpeedMultiplier() {
@@ -83,6 +94,7 @@ public class Boss extends Enemy {
     /** Per-tick boss logic. Called by EnemyManager after statuses tick. */
     public void updateBoss(Game game, double dt) {
         if (!isAlive() || getHp() <= 0) return;
+        if (shieldOffRemaining > 0) shieldOffRemaining = Math.max(0, shieldOffRemaining - dt);
         if (!entranceAnnounced) {
             entranceAnnounced = true;
             game.announceBoss(this);

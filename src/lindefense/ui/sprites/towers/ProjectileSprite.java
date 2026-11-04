@@ -221,7 +221,7 @@ public class ProjectileSprite extends GCompound implements Animated {
                 break;
             }
             case PULSE: {
-                pulseRing = new GOval(-k * 6, -k * 6, k * 12, k * 12);
+                pulseRing = new Flat.Oval(-k * 6, -k * 6, k * 12, k * 12);
                 pulseRing.setColor(Art.alpha(c, 200));
                 add(pulseRing);
                 plainPart(Art.circle(0, 0, k * 2.5, 8), Art.alpha(c, 200));

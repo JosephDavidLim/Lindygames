@@ -47,7 +47,7 @@ public final class SunoArt extends TowerArt {
             for (int s = -1; s <= 1; s += 2) {
                 double cx = s * w * 0.3;
                 disc(cx, cy, coneR, Art.rgb(0x2a1f3a));
-                GOval inner = new GOval(cx - coneR * 0.6, cy - coneR * 0.6, coneR * 1.2, coneR * 1.2);
+                GOval inner = new Flat.Oval(cx - coneR * 0.6, cy - coneR * 0.6, coneR * 1.2, coneR * 1.2);
                 inner.setFilled(true); inner.setFillColor(sec); inner.setColor(Art.shade(sec, 0.7));
                 add(inner);
                 cones.add(inner);
@@ -58,7 +58,7 @@ public final class SunoArt extends TowerArt {
         if (tier >= 1) {
             eqBase = top + h * (rows == 1 ? 0.8 : 0.85);
             for (int i = 0; i < 5; i++) {
-                GRect bar = new GRect(-r * 0.3 + i * r * 0.14, eqBase - r * 0.12, r * 0.09, r * 0.12);
+                GRect bar = new Flat.Rect(-r * 0.3 + i * r * 0.14, eqBase - r * 0.12, r * 0.09, r * 0.12);
                 bar.setFilled(true); bar.setFillColor(i % 2 == 0 ? Art.rgb(0x7ee0a0) : Art.rgb(0xffd166)); bar.setColor(Art.INK);
                 add(bar);
                 eq.add(bar);

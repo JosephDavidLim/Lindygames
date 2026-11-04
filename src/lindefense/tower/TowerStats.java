@@ -1,80 +1,119 @@
 package lindefense.tower;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import lindefense.combat.HitSpec;
 
 /**
- * Complete numeric description of a tower at one progression tier. The catalog
- * defines the base tier; each upgrade mutates a copy, so the four tiers are
- * cumulative. All fields are public so upgrade lambdas can edit them directly.
+ * Complete numeric description of a tower at one progression tier. The data table defines the base tier; each
+ * upgrade mutates a copy, so the four tiers (base + 3 upgrades) are cumulative. Core combat numbers are typed
+ * fields; every tower-specific mechanic number lives in the named-parameter map ({@link #p(String)}), so
+ * behaviours never contain literals. Distances are px (1:1 with the 1200x900 world), times are seconds.
  */
 public class TowerStats {
+    /** Range used for "entire map" (DeepSeek); larger than the map diagonal (1500 px). */
+    public static final double UNLIMITED_RANGE = 2000;
+
     public AttackKind kind = AttackKind.PROJECTILE;
     public HitSpec hit = new HitSpec();
     public double range = 150;
-    /** Attacks per second. */
+    /** Attacks per second (= 1 / interval). */
     public double rate = 1.0;
-    /** Enemies one attack can hit (projectile pierce, beam pass-through, pulse cap). */
+    /** Enemies one attack can hit (projectile pierce, beam pass-through). For splash shots: enemies the blast hits (1 = unlimited). */
     public int pierce = 1;
-    public double projectileSpeed = 400;
-    /** Splash radius in px (0 = none). Splash hits up to {@code pierce} enemies. */
+    public double projectileSpeed = 450;
+    /** Splash radius in px (0 = none). */
     public double splashRadius = 0;
-    /** Number of extra chain hops (CHAIN) and their reach. */
+    /** Extra chain hops after the first hit (CHAIN, or INSTANT ricochet) and their reach. */
     public int chainHops = 0;
-    public double chainRange = 90;
+    public double chainRange = 80;
     /** Projectile bounce count (MiniMax) and reach. */
     public int bounces = 0;
     public double bounceRange = 90;
-    /** Projectiles spawned on first hit (MiniMax clones). */
+    /** Total pieces a projectile splits into on its first hit (MiniMax U2: 2). */
     public int clones = 0;
-    /** Projectiles fired per attack at the same target (volley). */
+    /** Projectiles fired per target per attack (fan). */
     public int projectilesPerShot = 1;
     /** Distinct simultaneous targets per attack. */
     public int targets = 1;
-    /** Every Nth pulse is a "heavy" pulse (Sora Frame Drop / GLM Singularity Well). */
-    public int heavyEvery = 0;
-    public double heavyStun = 0;
-    public double heavyKnockback = 0;
-    /** Suno Resonance: +1 damage per N enemies in range (0 = off), capped. */
-    public int resonancePer = 0;
-    public int resonanceCap = 4;
-    /** Kimi: damage stacks per consecutive hit on the same target. */
+    /** Display only: consecutive-hit bonus cap and step (DeepSeek R1, Kimi). Mechanics read params. */
     public int stackCap = 0;
     public double stackStep = 1;
-    public double stackLinger = 0;
 
     public boolean seesCamo = false;
-    /** Towers within aura range gain camo detection. */
-    public boolean auraDetection = false;
-    public boolean auraSurveillanceImmunity = false;
+    /** Ignores line-of-sight blockers (Student+AI notes, DeepSeek). */
+    public boolean ignoresLos = false;
+
+    // ---- aura given to OTHER towers within auraRange (each source tower type counts once per stat) ----
     public double auraRange = 0;
-    /** Aura attack-speed bonus for all towers / for Military towers (additive fractions). */
+    /** Attack-speed fraction (0.10 = +10%). */
     public double auraRate = 0;
-    public double auraRateMilitary = 0;
+    /** Flat damage added to each attack (+1). */
     public double auraDamage = 0;
+    /** Pierce added (+1). */
+    public int auraPierce = 0;
+    /** Range fraction (0.15 = +15%). */
     public double auraRangeBonus = 0;
-    /** Mistral Wind Wall: passive slow on enemies in range. */
+    /** Towers in the aura gain camo detection. */
+    public boolean auraDetection = false;
+    /** Towers in the aura are immune to Predictive Surveillance. */
+    public boolean auraSurveillanceImmunity = false;
+
+    // ---- enemy field around the tower (Sora slow, Brad discipline, Perplexity analysis) ----
+    /** Field radius; 0 = use the tower's range. */
+    public double fieldRadius = 0;
+    /** Slow applied to enemies in the field (refreshed every few ticks). */
     public double auraEnemySlow = 0;
+    /** Flat / percent mark applied to enemies in the field. */
+    public double fieldMarkFlat = 0;
+    public double fieldMarkPct = 0;
+    /** Whether bosses are affected by the field's mark/slow (Brad's field spares bosses). */
+    public boolean fieldAffectsBosses = true;
+
     /** Cash paid at the end of every wave (Perplexity). */
     public double incomePerWave = 0;
-    /** Periodic summoning (DALL-E sprites). */
+    /** Display only: periodic summon (kept for the info panel). */
     public double summonInterval = 0;
     public int summonCount = 0;
-    public double summonLifetime = 0;
+
+    private final Map<String, Double> params = new LinkedHashMap<>();
+
+    // ---------------- named parameters ----------------
+    /** Mechanic parameter; throws if the data table never defined it (typos fail loudly). */
+    public double p(String key) {
+        Double v = params.get(key);
+        if (v == null) throw new IllegalArgumentException("Missing tower parameter '" + key + "'");
+        return v;
+    }
+    /** Mechanic parameter with a default for "not unlocked yet". */
+    public double p(String key, double dflt) { Double v = params.get(key); return v == null ? dflt : v; }
+    public int pi(String key) { return (int) Math.round(p(key)); }
+    public int pi(String key, int dflt) { Double v = params.get(key); return v == null ? dflt : (int) Math.round(v); }
+    public boolean has(String key) { Double v = params.get(key); return v != null && v != 0; }
+    public TowerStats set(String key, double value) { params.put(key, value); return this; }
+    public Map<String, Double> params() { return params; }
+
+    /** Sets the attack interval in seconds (rate = 1 / interval). */
+    public TowerStats interval(double seconds) { this.rate = 1.0 / seconds; return this; }
+    /** Attack interval in seconds. */
+    public double interval() { return 1.0 / rate; }
 
     public TowerStats copy() {
         TowerStats s = new TowerStats();
         s.kind = kind; s.hit = hit.copy(); s.range = range; s.rate = rate; s.pierce = pierce;
         s.projectileSpeed = projectileSpeed; s.splashRadius = splashRadius; s.chainHops = chainHops;
         s.chainRange = chainRange; s.bounces = bounces; s.bounceRange = bounceRange; s.clones = clones;
-        s.projectilesPerShot = projectilesPerShot; s.targets = targets; s.heavyEvery = heavyEvery;
-        s.heavyStun = heavyStun; s.heavyKnockback = heavyKnockback; s.resonancePer = resonancePer;
-        s.resonanceCap = resonanceCap; s.stackCap = stackCap; s.stackStep = stackStep; s.stackLinger = stackLinger;
-        s.seesCamo = seesCamo; s.auraDetection = auraDetection; s.auraSurveillanceImmunity = auraSurveillanceImmunity;
-        s.auraRange = auraRange; s.auraRate = auraRate; s.auraRateMilitary = auraRateMilitary; s.auraDamage = auraDamage;
-        s.auraRangeBonus = auraRangeBonus; s.auraEnemySlow = auraEnemySlow; s.incomePerWave = incomePerWave;
-        s.summonInterval = summonInterval; s.summonCount = summonCount; s.summonLifetime = summonLifetime;
+        s.projectilesPerShot = projectilesPerShot; s.targets = targets; s.stackCap = stackCap; s.stackStep = stackStep;
+        s.seesCamo = seesCamo; s.ignoresLos = ignoresLos;
+        s.auraRange = auraRange; s.auraRate = auraRate; s.auraDamage = auraDamage; s.auraPierce = auraPierce;
+        s.auraRangeBonus = auraRangeBonus; s.auraDetection = auraDetection; s.auraSurveillanceImmunity = auraSurveillanceImmunity;
+        s.fieldRadius = fieldRadius; s.auraEnemySlow = auraEnemySlow; s.fieldMarkFlat = fieldMarkFlat;
+        s.fieldMarkPct = fieldMarkPct; s.fieldAffectsBosses = fieldAffectsBosses;
+        s.incomePerWave = incomePerWave; s.summonInterval = summonInterval; s.summonCount = summonCount;
+        s.params.putAll(params);
         return s;
     }
 
     public boolean isSupportOnly() { return kind == AttackKind.NONE; }
+    public boolean hasUnlimitedRange() { return range >= UNLIMITED_RANGE; }
 }

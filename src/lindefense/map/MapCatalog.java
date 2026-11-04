@@ -20,6 +20,12 @@ public final class MapCatalog {
         }
     }
 
+    /** The catalog index of {@code map} (matched by name), or -1 if it is not a catalog map. */
+    public static int indexOf(GameMap map) {
+        for (int i = 0; i < MAP_COUNT; i++) if (create(i).getName().equals(map.getName())) return i;
+        return -1;
+    }
+
     /** Fresh instances of all maps (for menus and tests). */
     public static List<GameMap> createAll() {
         List<GameMap> all = new ArrayList<>();

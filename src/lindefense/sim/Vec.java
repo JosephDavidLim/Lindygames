@@ -20,6 +20,30 @@ public final class Vec {
     public double dist(Vec o) { return Math.hypot(x - o.x, y - o.y); }
     public double distSq(Vec o) { double dx = x - o.x, dy = y - o.y; return dx * dx + dy * dy; }
 
+    /**
+     * Exactly {@code dist(o) <= limit}, but cheap: compares squared lengths and only falls back to the (slow,
+     * correctly rounded) {@link Math#hypot} when the two are within 1e-9 relative of each other, where rounding could
+     * decide the answer. Use it in hot range checks so results stay bit-identical to {@code dist(o) <= limit}.
+     */
+    public boolean withinDist(Vec o, double limit) {
+        if (limit > 1e-6 && limit < 1e100) {
+            double dx = x - o.x, dy = y - o.y, d2 = dx * dx + dy * dy, l2 = limit * limit;
+            if (d2 < l2 * (1 - 1e-9)) return true;
+            if (d2 > l2 * (1 + 1e-9)) return false;
+        }
+        return dist(o) <= limit;
+    }
+
+    /** Exactly {@code dist(o) > limit} (including NaN behaviour), with the same fast path as {@link #withinDist}. */
+    public boolean exceedsDist(Vec o, double limit) {
+        if (limit > 1e-6 && limit < 1e100) {
+            double dx = x - o.x, dy = y - o.y, d2 = dx * dx + dy * dy, l2 = limit * limit;
+            if (d2 < l2 * (1 - 1e-9)) return false;
+            if (d2 > l2 * (1 + 1e-9)) return true;
+        }
+        return dist(o) > limit;
+    }
+
     /** Unit vector in the same direction (or zero vector if this is zero). */
     public Vec normalized() {
         double len = length();

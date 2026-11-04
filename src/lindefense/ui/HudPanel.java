@@ -125,7 +125,7 @@ public final class HudPanel extends GCompound {
         autoBtn.setIcon(Cyber.Kind.AUTO);
         autoBtn.setAccent(Cyber.MAGENTA);
         cx += 78 + 6;
-        menuBtn = btn(cx, 6, 72, 36, "MENU", () -> screen.backToMenu());
+        menuBtn = btn(cx, 6, 72, 36, "MENU", () -> screen.openMenu());
         menuBtn.setIcon(Cyber.Kind.MENU);
 
         // ---- bottom strip
@@ -199,7 +199,7 @@ public final class HudPanel extends GCompound {
         int alive = game.getEnemyManager().getAliveCount();
         int toSpawn = game.getWaveManager().getRemainingToSpawn();
 
-        cashChip.set(Cyber.money(game.getCash()), Cyber.YELLOW);
+        cashChip.set(compactMoney(game.getCash()), Cyber.YELLOW);
         // lives: red pulse when low, flash on loss
         int lv = game.getLives();
         if (lastLives >= 0 && lv < lastLives) lifeFlash = 0.6;
@@ -263,11 +263,11 @@ public final class HudPanel extends GCompound {
         if (w < WaveData.WAVE_COUNT && !game.getWaveManager().isWaveActive()) {
             WaveDef next = WaveData.get(w + 1);
             micro = "next // wave " + (w + 1);
-            line = next.totalSpawns() + " units";
+            line = Ui.shapedUnits(game, w + 1) + " units";   // after Difficulty Growth shaping
             boss = next.containsBoss();
         } else if (def != null && game.getWaveManager().isWaveActive()) {
             micro = "live // wave " + def.number;
-            line = def.totalSpawns() + " units";
+            line = Ui.shapedUnits(game, def.number) + " units";
             boss = def.containsBoss();
         } else { micro = "final"; line = "stand firm"; }
         Cyber.setText(nextMicro, Cyber.spaced(micro));
@@ -348,5 +348,12 @@ public final class HudPanel extends GCompound {
         toastFrame.size(toastW, 56).border(toastColor);
         toastStripe.setSize(5, 56);
         if (toastSpecial) toastText.burst(0.5);
+    }
+
+    /** Cash for the HUD chip: full digits up to $999,999, then compact ($1.25M, $12.5M) so it never overflows the chip. */
+    static String compactMoney(double v) {
+        if (v < 1_000_000) return Cyber.money(v);
+        double m = v / 1_000_000.0;
+        return m < 10 ? String.format("$%.2fM", m) : m < 100 ? String.format("$%.1fM", m) : String.format("$%.0fM", m);
     }
 }

@@ -40,11 +40,15 @@ public final class NeonButton extends GCompound {
     public boolean click() {
         if (!isVisible()) return false;
         pressT = 1;
+        lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_SELECT);   // AUDIO HOOK
         if (action != null) action.run();
         return true;
     }
 
-    public void setHover(boolean h) { hover = h; }
+    public void setHover(boolean h) {
+        if (h && !hover) lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_HOVER);   // AUDIO HOOK
+        hover = h;
+    }
 
     /** Animates glow and colour easing. */
     public void animate(double dt) {

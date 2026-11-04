@@ -142,7 +142,7 @@ public final class AttackEffects {
             total = life(ev, 0.18);
             a = ev.a; c = Art.rgb(ev.rgb);
             r0 = Math.max(4, ev.radius);
-            ring = new GOval(a.x - r0, a.y - r0, 2 * r0, 2 * r0);
+            ring = new Flat.Oval(a.x - r0, a.y - r0, 2 * r0, 2 * r0);
             ring.setColor(Art.alpha(Color.WHITE, 230));
             add(ring);
             sparks = Art.rawPoly(Art.star(0, 0, r0 * 2.2, r0 * 0.5, 4, 0), Art.alpha(Art.shade(c, 1.2), 230), Art.alpha(Art.INK, 200));

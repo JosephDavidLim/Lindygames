@@ -5,6 +5,7 @@ import acm.graphics.GOval;
 import acm.graphics.GPolygon;
 import acm.graphics.GRect;
 import java.awt.Color;
+import lindefense.ui.sprites.Thick;
 
 /**
  * Cartoon drawing helpers shared by every tower, projectile and effect sprite.
@@ -14,6 +15,14 @@ import java.awt.Color;
  * {@link #OUT} logical pixels larger, then the coloured fill on top. Helpers
  * that take a {@link GCompound} add both pieces to it and return the fill
  * object so callers can mutate it later.</p>
+ *
+ * <p>Every shape is a {@link Flat} primitive: transparent parts are never
+ * rasterized, decorative helpers ({@link #gloss}, {@link #sparkle},
+ * {@link #shadow}) are tagged {@link lindefense.ui.sprites.Thick#DETAIL_DECOR},
+ * ink underlays drop their one-pixel outline (half a pixel of border) at that
+ * tier and every other shape drops its outline at
+ * {@link lindefense.ui.sprites.Thick#DETAIL_FINE}, so crowded screens paint
+ * fewer shapes (see {@link lindefense.ui.sprites.Thick#setLevel}).</p>
  */
 public final class Art {
     private Art() { }
@@ -83,10 +92,12 @@ public final class Art {
 
     /** Adds an outlined filled ellipse; returns the fill oval. */
     public static GOval ellipse(GCompound g, double cx, double cy, double rx, double ry, Color fill) {
-        GOval ink = new GOval(cx - rx - OUT, cy - ry - OUT, 2 * (rx + OUT), 2 * (ry + OUT));
+        Flat.Oval ink = new Flat.Oval(cx - rx - OUT, cy - ry - OUT, 2 * (rx + OUT), 2 * (ry + OUT));
         ink.setFilled(true); ink.setFillColor(INK); ink.setColor(INK);
+        ink.setOutlineDetail(Thick.DETAIL_DECOR);
         g.add(ink);
-        GOval o = new GOval(cx - rx, cy - ry, 2 * rx, 2 * ry);
+        Flat.Oval o = new Flat.Oval(cx - rx, cy - ry, 2 * rx, 2 * ry);
+        o.setOutlineDetail(Thick.DETAIL_FINE);
         o.setFilled(true); o.setFillColor(fill); o.setColor(shade(fill, 0.75));
         g.add(o);
         return o;
@@ -94,10 +105,12 @@ public final class Art {
 
     /** Adds an outlined filled rectangle; returns the fill rect. */
     public static GRect box(GCompound g, double x, double y, double w, double h, Color fill) {
-        GRect ink = new GRect(x - OUT, y - OUT, w + 2 * OUT, h + 2 * OUT);
+        Flat.Rect ink = new Flat.Rect(x - OUT, y - OUT, w + 2 * OUT, h + 2 * OUT);
         ink.setFilled(true); ink.setFillColor(INK); ink.setColor(INK);
+        ink.setOutlineDetail(Thick.DETAIL_DECOR);
         g.add(ink);
-        GRect r = new GRect(x, y, w, h);
+        Flat.Rect r = new Flat.Rect(x, y, w, h);
+        r.setOutlineDetail(Thick.DETAIL_FINE);
         r.setFilled(true); r.setFillColor(fill); r.setColor(shade(fill, 0.75));
         g.add(r);
         return r;
@@ -120,7 +133,9 @@ public final class Art {
 
     /** Builds a filled polygon whose origin is (0,0) so it can be rotated about that pivot. */
     public static GPolygon rawPoly(double[] xy, Color fill, Color outline) {
-        GPolygon p = new GPolygon();
+        Flat.Poly p = new Flat.Poly();
+        // an ink underlay's own outline only thickens the border by half a pixel: dropped first
+        p.setOutlineDetail(INK.equals(fill) && INK.equals(outline) ? Thick.DETAIL_DECOR : Thick.DETAIL_FINE);
         for (int i = 0; i + 1 < xy.length; i += 2) p.addVertex(xy[i], xy[i + 1]);
         p.setFilled(true);
         p.setFillColor(fill);
@@ -132,7 +147,8 @@ public final class Art {
 
     /** Big glossy highlight: a soft white ellipse. */
     public static GOval gloss(GCompound g, double cx, double cy, double rx, double ry) {
-        GOval o = new GOval(cx - rx, cy - ry, 2 * rx, 2 * ry);
+        Flat.Oval o = new Flat.Oval(cx - rx, cy - ry, 2 * rx, 2 * ry);
+        o.setDetail(Thick.DETAIL_DECOR);
         o.setFilled(true); o.setFillColor(alpha(Color.WHITE, 120)); o.setColor(alpha(Color.WHITE, 0));
         g.add(o);
         return o;
@@ -140,14 +156,15 @@ public final class Art {
 
     /** Small four-point white sparkle. */
     public static GPolygon sparkle(GCompound g, double cx, double cy, double s) {
-        GPolygon p = rawPoly(star(cx, cy, s, s * 0.3, 4, 0), alpha(Color.WHITE, 230), alpha(Color.WHITE, 0));
+        GPolygon p = Flat.detail(rawPoly(star(cx, cy, s, s * 0.3, 4, 0), alpha(Color.WHITE, 230), alpha(Color.WHITE, 0)), Thick.DETAIL_DECOR);
         g.add(p);
         return p;
     }
 
     /** Soft semi-transparent ground shadow. */
     public static GOval shadow(GCompound g, double cx, double cy, double rx, double ry) {
-        GOval o = new GOval(cx - rx, cy - ry, 2 * rx, 2 * ry);
+        Flat.Oval o = new Flat.Oval(cx - rx, cy - ry, 2 * rx, 2 * ry);
+        o.setDetail(Thick.DETAIL_DECOR);
         o.setFilled(true); o.setFillColor(alpha(0x08061a, 70)); o.setColor(alpha(0x08061a, 0));
         g.add(o);
         return o;
@@ -155,7 +172,7 @@ public final class Art {
 
     /** Soft glow disc without outline. */
     public static GOval glow(GCompound g, double cx, double cy, double rad, Color c, int a) {
-        GOval o = new GOval(cx - rad, cy - rad, 2 * rad, 2 * rad);
+        GOval o = new Flat.Oval(cx - rad, cy - rad, 2 * rad, 2 * rad);
         o.setFilled(true); o.setFillColor(alpha(c, a)); o.setColor(alpha(c, 0));
         g.add(o);
         return o;
@@ -167,7 +184,8 @@ public final class Art {
      */
     public static GOval body(GCompound g, double cx, double cy, double rad, Color fill) {
         ellipse(g, cx, cy, rad, rad, shade(fill, 0.78));
-        GOval light = new GOval(cx - rad * 0.86 - rad * 0.1, cy - rad * 0.86 - rad * 0.1, rad * 1.72, rad * 1.72);
+        Flat.Oval light = new Flat.Oval(cx - rad * 0.86 - rad * 0.1, cy - rad * 0.86 - rad * 0.1, rad * 1.72, rad * 1.72);
+        light.setOutlineDetail(Thick.DETAIL_FINE);
         light.setFilled(true); light.setFillColor(fill); light.setColor(fill);
         g.add(light);
         gloss(g, cx - rad * 0.38, cy - rad * 0.42, rad * 0.32, rad * 0.2);
@@ -177,7 +195,8 @@ public final class Art {
     /** Two-tone rectangular body with gloss. Returns the light rect. */
     public static GRect bodyBox(GCompound g, double x, double y, double w, double h, Color fill) {
         box(g, x, y, w, h, shade(fill, 0.78));
-        GRect light = new GRect(x, y, w * 0.85, h * 0.85);
+        Flat.Rect light = new Flat.Rect(x, y, w * 0.85, h * 0.85);
+        light.setOutlineDetail(Thick.DETAIL_FINE);
         light.setFilled(true); light.setFillColor(fill); light.setColor(fill);
         g.add(light);
         gloss(g, x + w * 0.28, y + h * 0.22, w * 0.18, h * 0.1);

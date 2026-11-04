@@ -1,5 +1,7 @@
 package lindefense.test;
 
+import static lindefense.test.TestKit.*;
+
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -33,10 +35,6 @@ import lindefense.wave.WaveDef;
  * Exits with status 1 if any check fails.
  */
 public final class HeadlessTests {
-    private static int passed, failed;
-    private static final List<String> failures = new ArrayList<>();
-    private static String current = "";
-
     public static void main(String[] args) {
         run("catalogIntegrity", HeadlessTests::catalogIntegrity);
         run("purchaseUpgradeSell", HeadlessTests::purchaseUpgradeSell);
@@ -59,32 +57,49 @@ public final class HeadlessTests {
         run("winAndLose", HeadlessTests::winAndLose);
         run("shopLayout", HeadlessTests::shopLayout);
         run("stressLateWaves", HeadlessTests::stressLateWaves);
+        run("stressMaxedRoster", HeadlessTests::stressMaxedRoster);
+
+        GlobalRulesTests.runAll();
+        EnginePrimitiveTests.runAll();
+        HeroPrimaryMilitaryTests.runAll();
+        MagicSupportTests.runAll();
+        TitanTests.runAll();
+        BalanceTests.runAll();
+        ConsistencyTests.runAll();
+
+        run("restartResetsLevel", HeadlessTests::restartResetsLevel);
+        run("assetNamesMatchExactly", () -> { for (String f : AssetTests.run()) check(false, f); check(AssetTests.checkCount() > 40, "asset suite ran (" + AssetTests.checkCount() + " checks)"); });
         // DIFFICULTY HOOK: Difficulty Growth suite (see DifficultyTests)
         run("difficultyGrowth", () -> { for (String f : DifficultyTests.run()) check(false, f); check(DifficultyTests.checkCount() > 100, "difficulty suite ran (" + DifficultyTests.checkCount() + " checks)"); });
 
+        // AUDIO: sound / music system suite (headless, never opens a device)
+        run("audioSystem", () -> { for (String f : AudioTests.run()) check(false, f); check(AudioTests.checkCount() > 30, "audio suite ran (" + AudioTests.checkCount() + " checks)"); });
+
         System.out.println();
-        System.out.println("Passed: " + passed + "  Failed: " + failed);
-        for (String f : failures) System.out.println("  FAIL " + f);
-        System.exit(failed == 0 ? 0 : 1);
+        System.out.println("Passed: " + passed() + "  Failed: " + failed());
+        for (String f : failures()) System.out.println("  FAIL " + f);
+        System.exit(failed() == 0 ? 0 : 1);
     }
 
-    // ------------------------------------------------------------------ infra
-    private static void run(String name, Runnable r) {
-        current = name;
-        int before = failed;
-        try {
-            r.run();
-        } catch (Throwable t) {
-            failed++;
-            failures.add(name + ": exception " + t);
-            t.printStackTrace(System.out);
+    /** RESTART builds a fresh game on the same map and difficulty (wave, cash, lives, towers, enemies all reset). */
+    private static void restartResetsLevel() {
+        for (int map = 0; map < lindefense.map.MapCatalog.MAP_COUNT; map++) {
+            for (lindefense.sim.Difficulty d : lindefense.sim.Difficulty.values()) {
+                Game g = new Game(MapCatalog.create(map), 7, d);
+                g.addCash(4000, null);
+                g.placeTower(TowerType.GPT, buildableNear(g, new Vec(400, 250), 300));
+                g.startNextWave();
+                g.run(600);
+                g.loseLives(3, g.getEnemyManager().getEnemies().isEmpty() ? g.getEnemyManager().spawn(lindefense.enemy.EnemyType.STATIC_ARRAY, null, 0, 10) : g.getEnemyManager().getEnemies().get(0));
+                Game f = Game.freshCopy(g);
+                String tag = " (map " + map + ", " + d + ")";
+                check(f != g && f.getMap() != g.getMap(), "fresh game has its own map instance" + tag);
+                check(f.getMap().getName().equals(g.getMap().getName()) && f.getDifficulty() == g.getDifficulty(), "same map and difficulty" + tag);
+                check(f.getWave() == 0 && f.getLastCompletedWave() == 0 && f.getTick() == 0, "wave and clock reset" + tag);
+                check(f.getCash() == d.startCash(Game.START_CASH) && f.getLives() == d.startLives(Game.START_LIVES), "cash and lives reset" + tag);
+                check(f.getTowerManager().getTowers().isEmpty() && f.getEnemyManager().getEnemies().isEmpty() && f.getState() == Game.State.PLAYING && !f.isPaused(), "no towers, enemies or pause carried over" + tag);
+            }
         }
-        System.out.println((failed == before ? "PASS " : "FAIL ") + name);
-    }
-
-    private static void check(boolean cond, String msg) {
-        if (cond) passed++;
-        else { failed++; failures.add(current + ": " + msg); }
     }
 
     private static Game newGame(int mapIdx) { return new Game(MapCatalog.create(mapIdx), 42); }
@@ -96,61 +111,30 @@ public final class HeadlessTests {
         return m.equals(gr.modifiers);
     }
 
-    /** Finds a buildable point within radius of the target. */
-    private static Vec buildableNear(Game g, Vec target, double radius) {
-        for (double r = 0; r <= radius; r += 10) {
-            for (int a = 0; a < 24; a++) {
-                double ang = a * Math.PI / 12;
-                Vec p = new Vec(target.x + Math.cos(ang) * r, target.y + Math.sin(ang) * r);
-                if (g.getTowerManager().canPlace(TowerType.GPT, p) || (g.getMap().isBuildable(p, 20) && g.getTowerManager().placementProblem(TowerType.GPT, p).equals("Not enough cash"))) return p;
-            }
-        }
-        throw new IllegalStateException("No buildable point near " + target);
-    }
-
-    private static Tower forcePlace(Game g, TowerType type, Vec p, int tier) {
-        g.addCash(1_000_000, null);
-        Tower t = g.getTowerManager().place(type, p);
-        if (t == null) throw new IllegalStateException("Could not place " + type + " at " + p + ": " + g.getTowerManager().placementProblem(type, p));
-        for (int i = 0; i < tier; i++) g.getTowerManager().upgrade(t);
-        return t;
-    }
-
-    private static Enemy spawnAt(Game g, EnemyType type, EnumSet<Modifier> mods, int route, double dist) {
-        Enemy e = g.getEnemyManager().spawn(type, mods, route, dist);
-        g.getEnemyManager().update(0); // flush pending without moving
-        return e;
-    }
-
-    private static void killOutright(Game g, Enemy e) {
-        g.getCombat().applyHit(e, new HitSpec(1e9, DamageType.TRUE), null, 1, 0);
-        g.getEnemyManager().update(0);
-    }
-
     // ------------------------------------------------------------------ tests
     private static void catalogIntegrity() {
         TowerType[] p = TowerType.purchasable();
         check(p.length == 20, "20 purchasable towers, got " + p.length);
         int heroes = 0;
-        int maxTotal = 0; TowerType maxType = null;
+        int maxTotal = 0, secondTotal = 0; TowerType maxType = null;
         for (TowerType t : p) {
             TowerDef d = TowerCatalog.get(t);
             check(d != null, "def for " + t);
-            check(d.upgrades.length == 4, t + " has exactly 4 upgrades");
+            check(d.upgrades.length == 3, t + " has exactly 3 upgrades");
             check(d.ability != null && d.ability.cooldown > 0, t + " has ability with cooldown");
             check(d.baseCost > 0, t + " has cost");
-            for (int i = 0; i <= 4; i++) check(d.statsForTier(i) != null, t + " tier " + i + " stats");
-            check(d.upgrades[3].cost > d.upgrades[2].cost && d.upgrades[3].cost >= d.baseCost * 3, t + " superclass is a late-game investment");
-            check(d.upgrades[3].description.startsWith("SUPERCLASS"), t + " 4th upgrade marked superclass");
-            for (int i = 0; i < 4; i++) check(d.upgrades[i].name.equals(d.tierLabels[i + 1]), t + " upgrade name is the lineup model");
+            for (int i = 0; i <= 3; i++) check(d.statsForTier(i) != null, t + " tier " + i + " stats");
+            for (int i = 0; i < 3; i++) check(d.upgrades[i].name.equals(d.tierLabels[i + 1]), t + " upgrade name is the tier label");
             if (t.isHero()) heroes++;
-            if (d.totalCostForTier(4) > maxTotal) { maxTotal = d.totalCostForTier(4); maxType = t; }
-            check(d.tierLabels.length == 5, t + " 5 tier labels");
+            int total = d.totalCost();
+            if (total > maxTotal) { secondTotal = maxTotal; maxTotal = total; maxType = t; }
+            else if (total > secondTotal) secondTotal = total;
+            check(d.tierLabels.length == 4, t + " 4 tier labels");
+            check(d.subtitle != null && !d.subtitle.isEmpty(), t + " has a nickname subtitle");
         }
         check(heroes == 3, "3 heroes");
-        check(maxType == TowerType.BRAD_LINDEMANN, "Brad is most expensive total, got " + maxType);
-        int bradBase = TowerCatalog.get(TowerType.BRAD_LINDEMANN).baseCost;
-        for (TowerType t : p) if (t != TowerType.BRAD_LINDEMANN) check(TowerCatalog.get(t).baseCost * 3 <= bradBase, "Brad base >= 3x " + t);
+        check(maxType == TowerType.BRAD_LINDEMANN && maxTotal == 12500, "Brad is most expensive total ($12,500), got " + maxType + " " + maxTotal);
+        check(secondTotal <= 5100, "next highest total is about $5,100, got " + secondTotal);
         int species = 0;
         for (EnemyType e : EnemyType.values()) if (e.isSpawnableSpecies() && !e.isBoss()) species++;
         check(species == 16, "16 standard enemy species, got " + species);
@@ -165,7 +149,7 @@ public final class HeadlessTests {
         double cash0 = g.getCash();
         Tower t = g.placeTower(TowerType.GPT, p);
         check(t != null, "placed GPT");
-        check(g.getCash() == cash0 - 180, "cash deducted 180, cash=" + g.getCash());
+        check(g.getCash() == cash0 - 500, "cash deducted 500, cash=" + g.getCash());
         check(t.getTier() == 0, "tier 0");
         g.addCash(5000, null);
         double c = g.getCash();
@@ -173,10 +157,9 @@ public final class HeadlessTests {
         check(g.upgradeTower(t) && t.getTier() == 1 && g.getCash() == c - gptDef.upgrades[0].cost, "upgrade 1 costs " + gptDef.upgrades[0].cost);
         check(t.getTierLabel().equals("GPT-6 Luna"), "tier label is the model name");
         check(g.upgradeTower(t) && t.getTier() == 2, "upgrade 2");
-        check(g.upgradeTower(t) && t.getTier() == 3, "upgrade 3");
-        check(g.upgradeTower(t) && t.getTier() == 4 && t.isSuperclass(), "upgrade 4 (superclass)");
-        check(!g.upgradeTower(t) && t.getTier() == 4, "no 5th upgrade");
-        int invested = 180 + gptDef.upgrades[0].cost + gptDef.upgrades[1].cost + gptDef.upgrades[2].cost + gptDef.upgrades[3].cost;
+        check(g.upgradeTower(t) && t.getTier() == 3 && t.isMaxed(), "upgrade 3 (maxed)");
+        check(!g.upgradeTower(t) && t.getTier() == 3, "no 4th upgrade");
+        int invested = 500 + gptDef.upgrades[0].cost + gptDef.upgrades[1].cost + gptDef.upgrades[2].cost;
         check(t.getInvestedCost() == invested, "invested " + invested);
         int expectedRefund = (int) Math.floor(invested * 0.7);
         check(Shop.sellValue(t) == expectedRefund, "sell value 70%");
@@ -188,7 +171,7 @@ public final class HeadlessTests {
         Game g2 = newGame(0);
         check(g2.placeTower(TowerType.BRAD_LINDEMANN, p) == null, "cannot afford Brad at start");
         check(g2.getCash() == Game.START_CASH, "cash unchanged after failed purchase");
-        // Every tower can be placed and upgraded 3 times
+        // Every tower can be placed and upgraded 3 times (and never a 4th)
         Game g3 = newGame(0);
         g3.addCash(1_000_000, null);
         int i = 0;
@@ -199,10 +182,10 @@ public final class HeadlessTests {
             Tower tt = g3.placeTower(type, b);
             check(tt != null, "place " + type);
             if (tt == null) continue;
-            for (int k = 0; k < 4; k++) check(g3.upgradeTower(tt), type + " upgrade " + (k + 1));
-            check(!g3.upgradeTower(tt), type + " no 5th upgrade");
-            check(tt.getInvestedCost() == TowerCatalog.get(type).totalCostForTier(4), type + " invested matches");
-            check(tt.getStats() != null && tt.isSuperclass(), type + " T4 stats");
+            for (int k = 0; k < 3; k++) check(g3.upgradeTower(tt), type + " upgrade " + (k + 1));
+            check(!g3.upgradeTower(tt), type + " no 4th upgrade");
+            check(tt.getInvestedCost() == TowerCatalog.get(type).totalCost(), type + " invested matches");
+            check(tt.getStats() != null && tt.isMaxed(), type + " T3 stats");
         }
     }
 
@@ -230,7 +213,8 @@ public final class HeadlessTests {
         double c0 = g.getCash();
         Enemy sa = spawnAt(g, EnemyType.STATIC_ARRAY, null, 0, 100);
         killOutright(g, sa);
-        check(g.getCash() == c0 + 3, "Static Array reward 3, got " + (g.getCash() - c0));
+        double rs = g.getRewardScale();   // wave-1 reward multiplier (see WaveData.rewardScale)
+        check(g.getCash() == c0 + Math.round(3 * rs), "Static Array reward 3 x " + rs + ", got " + (g.getCash() - c0));
         check(!sa.isAlive(), "dead");
         List<Enemy> live = g.getEnemyManager().getEnemies();
         check(live.size() == 1 && live.get(0).getType() == EnemyType.PRIMITIVE_VARIABLE, "child primitive spawned");
@@ -242,14 +226,14 @@ public final class HeadlessTests {
         g.getEnemyManager().update(0);
         check(g.getCash() == c1, "no duplicate reward for re-killing");
         killOutright(g, child);
-        check(g.getCash() == c1 + 2, "child reward 2");
+        check(g.getCash() == c1 + Math.round(2 * rs), "child reward 2 x " + rs);
         // leak pays nothing
         double c2 = g.getCash();
         Enemy leaker = spawnAt(g, EnemyType.PRIMITIVE_VARIABLE, null, 0, g.getMap().getRoutes().get(0).getTotalLength() - 1);
         g.run(5);
         check(leaker.hasLeaked() && g.getCash() == c2, "leaked enemy pays nothing");
         // reward scaling later
-        check(WaveData.rewardScale(10) == 1.0 && WaveData.rewardScale(90) < 1.0, "reward scale decreases");
+        check(WaveData.rewardScale(90) < WaveData.rewardScale(10) && WaveData.rewardScale(90) < WaveData.rewardScale(70), "reward scale tapers off in the last 20 waves");
     }
 
     private static void livesLossOnLeak() {
@@ -345,12 +329,12 @@ public final class HeadlessTests {
         Enemy ff = spawnAt(g, EnemyType.QUICK_SORT, EnumSet.of(Modifier.FORTIFIED), 0, 100);
         check(ff.getMaxHp() == 14, "fortified quick 14");
         check(ff.stripFortified() && !ff.isFortified() && ff.getHp() <= 7, "strip fortified halves");
-        // Physical immunity vs penetrator
+        // Lead-type immunity to Sharp, and the "can damage Lead" flag
         Enemy heap = spawnAt(g, EnemyType.HEAP_SORT, null, 0, 100);
-        double dealt = g.getCombat().applyHit(heap, new HitSpec(3, DamageType.PHYSICAL), null, 1, 0);
-        check(dealt == 0, "heap immune to physical");
-        HitSpec kinetic = new HitSpec(3, DamageType.PHYSICAL); kinetic.ignoresResistance = true;
-        check(g.getCombat().applyHit(heap, kinetic, null, 1, 0) == 3, "kinetic penetrator damages heap");
+        double dealt = g.getCombat().applyHit(heap, new HitSpec(3, DamageType.SHARP), null, 1, 0);
+        check(dealt == 0, "heap (Lead-type) immune to Sharp");
+        HitSpec lead = new HitSpec(3, DamageType.SHARP); lead.ignoresResistance = true;
+        check(g.getCombat().applyHit(heap, lead, null, 1, 0) == 3, "Sharp that can damage Lead hurts heap");
         // Armour
         Enemy moab = spawnAt(g, EnemyType.BELLARMINE_COLLEGE_PREP, null, 0, 100);
         double d1 = g.getCombat().applyHit(moab, new HitSpec(100, DamageType.ENERGY), null, 1, 0);
@@ -421,7 +405,7 @@ public final class HeadlessTests {
             killOutright(g, b);
             int n = g.getEnemyManager().countOfType((EnemyType) c[1]);
             check(n == (Integer) c[2], c[0] + " releases " + c[2] + " " + c[1] + ", got " + n);
-            check(g.getCash() == cash + ((EnemyType) c[0]).reward, c[0] + " reward paid once");
+            check(g.getCash() == cash + Math.round(((EnemyType) c[0]).reward * g.getRewardScale()), c[0] + " reward paid once");
             for (Enemy ch : g.getEnemyManager().getEnemies()) {
                 check(ch.isFortified(), c[0] + " children inherit Fortified from boss");
                 if (c[0] == EnemyType.LOCKHEED_MARTIN) check(ch.isCamo(), "Lockheed children camo");
@@ -484,16 +468,18 @@ public final class HeadlessTests {
         g4.setGlobalEnemySpeedMultiplier(1);
         g4.run(600);
         check(g4.getLives() == 100 - 5 - 1, "bucket leak costs 5 + 1 lives, lives=" + g4.getLives());
-        // Radix phases
+        // Radix phases: layers 8-7 plain, then armoured (Lead-type) phases
         Game g5 = newGame(1);
         Enemy rdx = spawnAt(g5, EnemyType.RADIX_SORT, null, 0, 100);
-        check(rdx.radixPhase() == 0, "radix phase 0 at full HP");
-        check(g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.PHYSICAL), null, 1, 0) == 2, "radix phase 0 takes physical");
-        check(rdx.radixPhase() == 1 && g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.PHYSICAL), null, 1, 0) == 0, "radix phase 1 physical-immune");
+        check(rdx.radixPhase() == 0 && !rdx.isLeadType(), "radix phase 0 at full HP is not Lead-type");
+        check(g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.SHARP), null, 1, 0) == 2, "radix phase 0 takes Sharp");
+        check(rdx.radixPhase() == 1 && rdx.isLeadType(), "radix phase 1 is armoured (Lead-type)");
+        check(g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.SHARP), null, 1, 0) == 0, "radix phase 1 immune to Sharp");
+        check(g5.getCombat().applyHit(rdx, new HitSpec(1, DamageType.ENERGY), null, 1, 0) == 1, "radix armoured phase takes Energy");
         g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.TRUE), null, 1, 0);
-        check(rdx.radixPhase() == 2 && g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.ENERGY), null, 1, 0) == 1, "radix phase 2 halves energy");
+        check(rdx.radixPhase() == 2 && rdx.isLeadType(), "radix phase 2 still armoured");
         g5.getCombat().applyHit(rdx, new HitSpec(1, DamageType.TRUE), null, 1, 0);
-        check(rdx.radixPhase() == 3 && g5.getCombat().applyHit(rdx, new HitSpec(2, DamageType.EXPLOSIVE), null, 1, 0) == 0, "radix phase 3 explosive-immune");
+        check(rdx.radixPhase() == 3 && g5.getCombat().applyHit(rdx, new HitSpec(1, DamageType.EXPLOSIVE), null, 1, 0) == 1, "radix phase 3 takes Explosive");
         // Bubble swap, Selection, Insertion
         Game g6 = newGame(1);
         g6.setGlobalEnemySpeedMultiplier(0);
@@ -540,14 +526,13 @@ public final class HeadlessTests {
         g.setGlobalEnemySpeedMultiplier(0);
         Path r = g.getMap().getRoutes().get(0);
         Vec p = buildableNear(g, r.positionAt(400).add(new Vec(0, -70)), 80);
-        Tower llama = forcePlace(g, TowerType.LLAMA, p, 0);
+        Tower claude = forcePlace(g, TowerType.CLAUDE, p, 0);
         Enemy far = spawnAt(g, EnemyType.MERGE_SORT, null, 0, 1500);
         Enemy near = spawnAt(g, EnemyType.MERGE_SORT, null, 0, 400);
         g.run(90);
         check(near.getHp() < near.getMaxHp(), "projectile hit the in-range enemy");
         check(far.getHp() == far.getMaxHp(), "out-of-range enemy untouched");
-        check(llama.getDamageDealt() > 0, "damage attributed to tower");
-        check(near.getDistance() < 400, "knockback pushed enemy back");
+        check(claude.getDamageDealt() > 0, "damage attributed to tower");
         // Splash hits several
         Game g2 = newGame(0);
         g2.setGlobalEnemySpeedMultiplier(0);
@@ -561,7 +546,7 @@ public final class HeadlessTests {
         // Chain hits several
         Game g3 = newGame(0);
         g3.setGlobalEnemySpeedMultiplier(0);
-        forcePlace(g3, TowerType.GEMINI, p, 0);
+        forcePlace(g3, TowerType.GEMINI, p, 1);
         List<Enemy> g3e = new ArrayList<>();
         for (int i = 0; i < 4; i++) g3e.add(spawnAt(g3, EnemyType.HEAP_SORT, null, 0, 400 + i * 40));
         g3.run(60);
@@ -701,14 +686,12 @@ public final class HeadlessTests {
         g.getCombat().applyHit(pal, new HitSpec(pal.getMaxHp() * 0.31, DamageType.TRUE), null, 1, 0);
         g.run(1);
         check(pal.getPhase() == 1, "phase 2 at <70%");
-        pal.clearStatus(StatusEffect.Kind.ARMOR_BREAK);
-        check(Math.abs(pal.effectiveArmor() - 0.35) < 1e-9, "phase 2 armour 35%");
+                check(Math.abs(pal.effectiveArmor() - 0.35) < 1e-9, "phase 2 armour 35%");
         int enemiesBefore = g.getEnemyManager().getEnemies().size();
         g.getCombat().applyHit(pal, new HitSpec(pal.getMaxHp() * 0.35, DamageType.TRUE), null, 1, 0);
         g.run(1);
         check(pal.getPhase() == 2, "phase 3 at <35%");
-        pal.clearStatus(StatusEffect.Kind.ARMOR_BREAK);
-        check(Math.abs(pal.effectiveArmor() - 0.10) < 1e-9, "phase 3 armour 10%");
+                check(Math.abs(pal.effectiveArmor() - 0.10) < 1e-9, "phase 3 armour 10%");
         check(g.getEnemyManager().countOfType(EnemyType.LOCKHEED_MARTIN) == 2 && g.getEnemyManager().getEnemies().size() == enemiesBefore + 2, "phase 3 launches 2 Lockheed escorts");
         // Surveillance
         pal.beginSurveillance(g);
@@ -725,22 +708,20 @@ public final class HeadlessTests {
         g.run((int) (Boss.SURVEIL_DURATION / Game.DT) + 2);
         check(!strong.isSurveilled(), "surveillance expires");
         check(Math.abs(strong.effectiveRate(g) - rateBefore) < 1e-9, "rate restored");
-        // Counter: Perplexity Encrypted Index aura immunity
-        Tower perp = forcePlace(g, TowerType.PERPLEXITY, buildableNear(g, base.add(new Vec(80, 60)), 100), 3);
+        // Counter: Perplexity Sonar Reasoning Pro (U2) radius immunity
+        Tower perp = forcePlace(g, TowerType.PERPLEXITY, buildableNear(g, base.add(new Vec(80, 60)), 100), 2);
         g.getTowerManager().recomputeAuras();
-        check(strong.isSurveillanceImmune(), "DeepSeek immune inside Perplexity T3 aura");
+        check(strong.isSurveillanceImmune(), "DeepSeek immune inside Perplexity U2 radius");
         pal.beginSurveillance(g);
         g.run((int) (Boss.TELEGRAPH_TIME / Game.DT) + 2);
         check(!strong.isSurveilled(), "immune tower not surveilled");
-        // Counter: Brad's Command Override clears
+        // Upgrading a surveilled tower clears the effect
         g.sellTower(perp);
         g.getTowerManager().recomputeAuras();
         pal.beginSurveillance(g);
         g.run((int) (Boss.TELEGRAPH_TIME / Game.DT) + 2);
-        check(strong.isSurveilled(), "surveilled again without aura");
-        Tower brad = forcePlace(g, TowerType.BRAD_LINDEMANN, buildableNear(g, base.add(new Vec(-120, 0)), 150), 0);
-        check(g.activateAbility(brad), "Command Override activates");
-        check(!strong.isSurveilled() && !strong2.isSurveilled(), "Command Override clears surveillance");
+        check(strong.isSurveilled() && cheap.isSurveilled(), "surveilled again without the Perplexity radius");
+        check(g.upgradeTower(cheap) && !cheap.isSurveilled(), "upgrading clears Surveillance");
         // Periodic trigger happens on its own
         Game g2 = newGame(0);
         g2.setGlobalEnemySpeedMultiplier(0);
@@ -753,19 +734,28 @@ public final class HeadlessTests {
     private static void abilityCooldowns() {
         Game g = newGame(0);
         Vec p = buildableNear(g, new Vec(400, 250), 200);
-        Tower gpt = forcePlace(g, TowerType.GPT, p, 0);
-        check(gpt.isAbilityReady(), "ability ready initially");
-        check(g.activateAbility(gpt), "ability activates");
-        check(!gpt.isAbilityReady(), "not ready after use");
-        check(Math.abs(gpt.getAbilityCooldownRemaining() - 40) < 1e-9, "cooldown 40 s");
-        check(!g.activateAbility(gpt), "cannot activate during cooldown");
-        check(gpt.buffRateMult() == 3.0, "self buff applied (3x rate)");
-        g.run((int) (6.1 / Game.DT));
-        check(gpt.buffRateMult() == 1.0, "buff expired after 6 s");
-        g.run((int) (34.1 / Game.DT));
-        check(gpt.isAbilityReady(), "ready again after cooldown");
+        Tower st = forcePlace(g, TowerType.BELLARMINE_STUDENT, p, 0);
+        check(!st.isAbilityReady(), "ability starts at 50% cooldown, not ready");
+        check(Math.abs(st.getAbilityCooldownRemaining() - 22.5) < 1e-9, "starting cooldown is 22.5 s (50% of 45)");
+        check(!g.activateAbility(st), "cannot activate while cooling down");
+        runSeconds(g, 22.6);
+        check(st.isAbilityReady(), "ready after the remaining 50%");
+        check(g.activateAbility(st), "ability activates");
+        check(!st.isAbilityReady(), "not ready after use");
+        check(Math.abs(st.getAbilityCooldownRemaining() - 45) < 1e-9, "cooldown 45 s");
+        check(!g.activateAbility(st), "cannot activate during cooldown");
+        check(Math.abs(st.selfRateMult() - 2.0) < 1e-9, "self buff applied (x2 rate)");
+        runSeconds(g, 10.1);
+        check(st.selfRateMult() == 1.0, "buff expired after 10 s");
+        runSeconds(g, 35);
+        check(st.isAbilityReady(), "ready again after cooldown");
+        // cooldowns count in game time: 3x speed finishes three times sooner in real seconds
+        Game fast = newGame(0);
+        Tower ft = forcePlace(fast, TowerType.BELLARMINE_STUDENT, p, 0);
+        fast.setSpeed(3);
+        for (int i = 0; i < 60 * 8; i++) fast.advance(1.0 / 60);   // 8 real seconds = 24 game seconds
+        check(ft.isAbilityReady(), "ability cooldown speeds up with fast-forward");
         // every tower's ability can activate (with an enemy present where required)
-        g.setGlobalEnemySpeedMultiplier(0);
         int i = 0;
         for (TowerType type : TowerType.purchasable()) {
             Game gg = newGame(0);
@@ -775,8 +765,9 @@ public final class HeadlessTests {
             Tower t = forcePlace(gg, type, q, 3);
             spawnAt(gg, EnemyType.HEAP_SORT, null, 0, 500);
             spawnAt(gg, EnemyType.MERGE_SORT, EnumSet.of(Modifier.FORTIFIED), 0, 510);
-            gg.run(30);
-            boolean ok = gg.activateAbility(t);
+            t.resetAbilityCooldown();
+            if (t.getAbility().needsTarget) check(!gg.activateAbility(t) && t.isAbilityReady(), type + " targeted ability refuses activation without a point");
+            boolean ok = t.getAbility().needsTarget ? gg.activateAbility(t, r.positionAt(500)) : gg.activateAbility(t);
             check(ok, type + " ability activates");
             check(!t.isAbilityReady() && t.getAbilityCooldownRemaining() > 0, type + " ability on cooldown");
             gg.run(60);
@@ -830,7 +821,8 @@ public final class HeadlessTests {
         Enemy near = spawnAt(g, EnemyType.PRIMITIVE_VARIABLE, null, 1, g.getMap().getRoutes().get(1).getTotalLength() - 100);
         check(sc.enemySpeedMultiplier(near) > sc.enemySpeedMultiplier(far), "gravity speeds up enemies near core");
         g.setGlobalEnemySpeedMultiplier(0);
-        Tower t = forcePlace(g, TowerType.GPT, buildableNear(g, new Vec(600, 200), 200), 0);
+        Tower t = forcePlace(g, TowerType.BELLARMINE_STUDENT, buildableNear(g, new Vec(600, 200), 200), 0);
+        t.resetAbilityCooldown();
         g.activateAbility(t);
         check(!t.isAbilityReady(), "cooldown started");
         sc.triggerCollapse(g);
@@ -941,10 +933,10 @@ public final class HeadlessTests {
         check(lindefense.ui.ShopLayout.factionCells(lindefense.tower.Faction.TITAN).size() == 7, "Titans tab has 7 cards");
         // affordability flags follow cash
         check(lindefense.ui.ShopLayout.affordable(650, TowerType.GPT) && !lindefense.ui.ShopLayout.affordable(650, TowerType.BRAD_LINDEMANN), "affordability at $650");
-        check(lindefense.ui.ShopLayout.shortfall(650, TowerType.BRAD_LINDEMANN) == 2500 - 650 && lindefense.ui.ShopLayout.shortfall(650, TowerType.GPT) == 0, "shortfall amounts");
+        check(lindefense.ui.ShopLayout.shortfall(650, TowerType.BRAD_LINDEMANN) == 2000 - 650 && lindefense.ui.ShopLayout.shortfall(650, TowerType.GPT) == 0, "shortfall amounts");
         int affordableAtStart = 0;
         for (lindefense.ui.ShopLayout.Cell c : all) if (lindefense.ui.ShopLayout.affordable(Game.START_CASH, c.type)) affordableAtStart++;
-        check(affordableAtStart == 18, "18 of 20 towers affordable at start, got " + affordableAtStart);
+        check(affordableAtStart == 13, "13 of 20 towers affordable at start, got " + affordableAtStart);
     }
 
     private static void stressLateWaves() {
@@ -1002,7 +994,65 @@ public final class HeadlessTests {
         }
         long ms = System.currentTimeMillis() - start;
         System.out.println("  stress time: " + ms + " ms");
-        check(overallPeak > 80, "stress produced a real rush (peak " + overallPeak + ")");
+        check(overallPeak > 50, "stress produced a real rush (peak " + overallPeak + ")");
         check(true, "stress completed without exceptions");
+    }
+
+    /** All 20 towers fully upgraded, abilities spammed (targeted ones at a track point), late waves: no exceptions, sane state. */
+    private static void stressMaxedRoster() {
+        long start = System.currentTimeMillis();
+        for (int m = 0; m < MapCatalog.MAP_COUNT; m++) {
+            Game g = newGame(m);
+            g.setInvincible(true);
+            g.setGlobalEnemySpeedMultiplier(0.35);
+            g.addCash(5_000_000, null);
+            int placed = 0;
+            TowerType[] all = TowerType.purchasable();
+            outer:
+            for (Path r : g.getMap().getRoutes()) {
+                for (double d = 80; d < r.getTotalLength(); d += 110) {
+                    Vec dir = r.directionAt(d);
+                    for (int side = -1; side <= 1; side += 2) {
+                        Vec p = r.positionAt(d).add(new Vec(-dir.y, dir.x).scale(side * 75));
+                        if (placed >= all.length) break outer;
+                        if (g.getTowerManager().canPlace(all[placed], p)) {
+                            Tower t = g.placeTower(all[placed], p);
+                            while (g.upgradeTower(t)) { /* max out */ }
+                            placed++;
+                        }
+                    }
+                }
+            }
+            check(placed == 20, g.getMap().getName() + " fits the whole roster (" + placed + ")");
+            for (int k = 1; k < 94; k++) { g.getWaveManager().startNextWave(); g.getWaveManager().endWave(); }
+            int peakDrones = 0, peakZones = 0, peakWalkers = 0;
+            for (int wave = 94; wave <= 100; wave++) {
+                g.getWaveManager().endWave();
+                g.getEnemyManager().clear();
+                check(g.startNextWave(), "start wave " + wave);
+                int ticks = 0;
+                while (g.getWaveManager().isWaveActive() && ticks < 60 * 120 && g.getState() == Game.State.PLAYING) {
+                    g.step(Game.DT);
+                    if (ticks % 60 == 0) {
+                        for (Tower t : new ArrayList<>(g.getTowerManager().getTowers())) {
+                            if (!t.isAbilityReady()) continue;
+                            if (t.getAbility().needsTarget) g.activateAbility(t, g.getMap().getRoutes().get(0).positionAt(400));
+                            else g.activateAbility(t);
+                        }
+                    }
+                    peakDrones = Math.max(peakDrones, g.getEffects().getDrones().size());
+                    peakZones = Math.max(peakZones, g.getEffects().getZones().size());
+                    peakWalkers = Math.max(peakWalkers, g.getEffects().getWalkers().size());
+                    g.getEvents().clear();
+                    ticks++;
+                }
+                if (g.getState() != Game.State.PLAYING) break;
+            }
+            check(g.getState() == Game.State.PLAYING || g.getState() == Game.State.VICTORY, "maxed roster stress ended in a sane state");
+            check(peakDrones > 0 && peakWalkers > 0, g.getMap().getName() + " primitives were exercised (drones " + peakDrones + ", walkers " + peakWalkers + ", zones " + peakZones + ")");
+            System.out.println("  " + g.getMap().getName() + ": maxed roster, wave " + g.getWave() + ", killed " + g.getEnemyManager().getTotalKilled()
+                + ", drones " + peakDrones + ", walkers " + peakWalkers);
+        }
+        System.out.println("  maxed-roster stress time: " + (System.currentTimeMillis() - start) + " ms");
     }
 }

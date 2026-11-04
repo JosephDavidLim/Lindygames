@@ -23,6 +23,7 @@ import lindefense.tower.TowerDef;
 import lindefense.tower.TowerStats;
 import lindefense.tower.TowerType;
 import lindefense.tower.UpgradeDef;
+import lindefense.tower.behavior.KimiBehavior;
 
 /**
  * Right-hand panel: the tower shop (faction tabs or an ALL view showing every buildable tower grouped by faction) and
@@ -45,6 +46,7 @@ public final class SidePanel extends GCompound {
     /** One rendered shop cell. */
     private static final class Card {
         final ShopLayout.Cell cell; final UIButton button; final GLabel price; final GLabel name; final GObject icon;
+        GCompound badge;   // "PLACED" tag on a hero that already stands on the map
         Card(ShopLayout.Cell cell, UIButton button, GLabel price, GLabel name, GObject icon) {
             this.cell = cell; this.button = button; this.price = price; this.name = name; this.icon = icon;
         }
@@ -185,7 +187,20 @@ public final class SidePanel extends GCompound {
                 price = Ui.label(Ui.money(d.baseCost), tx, top + blockH - 2, Cyber.mono(Font.BOLD, ps), Cyber.YELLOW);
             }
             cardLayer.add(icon); cardLayer.add(name); cardLayer.add(price);
-            cards.add(new Card(c, b, price, name, icon));
+            Card card = new Card(c, b, price, name, icon);
+            if (t.isHero()) {
+                GCompound badge = new GCompound();
+                GLabel bl = Ui.label("PLACED", 0, 0, Cyber.mono(Font.BOLD, 11), Cyber.YELLOW);
+                double bw = bl.getWidth() + 16;
+                badge.add(new Cyber.Chamfer(0, 0, bw, 18, 5).scan(false).fill(new Color(20, 16, 4, 235)).border(Cyber.YELLOW));
+                bl.setLocation(8, 13);
+                badge.add(bl);
+                badge.setLocation(c.x + c.w - bw - 4, c.y + 4);
+                badge.setVisible(false);
+                cardLayer.add(badge);
+                card.badge = badge;
+            }
+            cards.add(card);
         }
         infoY = ShopLayout.bottom(cells) + 10;
         refreshAffordability();
@@ -269,10 +284,12 @@ public final class SidePanel extends GCompound {
     private void refreshAffordability() {
         double cash = game.getCash();
         for (Card c : cards) {
-            boolean ok = ShopLayout.affordable(cash, c.cell.type);
+            boolean placed = c.cell.type.isHero() && game.getTowerManager().heroPlaced(c.cell.type);
+            boolean ok = ShopLayout.affordable(cash, c.cell.type) && !placed;
+            if (c.badge != null && c.badge.isVisible() != placed) c.badge.setVisible(placed);
             c.button.setSelected(screen.getPlacing() == c.cell.type);
             c.button.setEnabled(ok);
-            Cyber.setColor(c.price, ok ? Cyber.YELLOW : Cyber.RED);
+            Cyber.setColor(c.price, ok ? Cyber.YELLOW : placed ? Cyber.DIM : Cyber.RED);
             Cyber.setColor(c.name, ok ? Cyber.TEXT : new Color(0x6f819b));
             if (c.icon instanceof ShopIcon) ((ShopIcon) c.icon).setDimmed(!ok);
         }
@@ -322,10 +339,11 @@ public final class SidePanel extends GCompound {
         int need = ShopLayout.shortfall(game.getCash(), hover.cell.type);
         tipTitle.setLabel(hover.cell.type.displayName + "   " + Ui.money(d.baseCost));
         Cyber.setText(tipSub, d.subtitle + "  //  " + hover.cell.type.faction.label);
-        Cyber.setText(tipStatus, need > 0 ? "NEED " + Ui.money(need) + " MORE" : "CLICK, THEN PLACE ON THE MAP");
-        Color accent = need > 0 ? Cyber.RED : Cyber.CYAN;
+        String block = hover.cell.type.isHero() && game.getTowerManager().heroPlaced(hover.cell.type) ? Shop.unavailableReason(game, hover.cell.type) : null;
+        Cyber.setText(tipStatus, block != null ? block.toUpperCase() : need > 0 ? "NEED " + Ui.money(need) + " MORE" : "CLICK, THEN PLACE ON THE MAP");
+        Color accent = block != null ? Cyber.YELLOW : need > 0 ? Cyber.RED : Cyber.CYAN;
         Cyber.setColor(tipStatus, accent);
-        Cyber.setColor(tipTitle, need > 0 ? Cyber.lerp(Cyber.TEXT, Cyber.RED, 0.15) : Cyber.TEXT);
+        Cyber.setColor(tipTitle, need > 0 && block == null ? Cyber.lerp(Cyber.TEXT, Cyber.RED, 0.15) : Cyber.TEXT);
         double w = Math.max(240, Math.max(tipTitle.getWidth(), tipSub.getWidth()) + 28);
         tipFrame.size(w, 78).border(accent);
         double y = Math.max(Ui.WORLD_Y + 6, Math.min(hover.cell.y + hover.cell.h / 2 - 39, Ui.BOTTOM_Y - 90));
@@ -467,8 +485,8 @@ public final class SidePanel extends GCompound {
         List<String> aura = new ArrayList<>();
         if (sees) aura.add("sees camo");
         if (s.auraDetection) aura.add("shares detection");
-        if (s.auraRate > 0) aura.add("aura +" + (int) (s.auraRate * 100) + "% speed" + (s.auraRateMilitary > 0 ? " (Military +" + (int) (s.auraRateMilitary * 100) + "%)" : ""));
-        if (s.auraDamage > 0) aura.add("aura +" + (int) (s.auraDamage * 100) + "% damage");
+        if (s.auraRate > 0) aura.add("aura +" + (int) (s.auraRate * 100) + "% speed");
+        if (s.auraDamage > 0) aura.add("aura +" + Ui.fmt(s.auraDamage) + " damage");
         if (s.auraRangeBonus > 0) aura.add("aura +" + (int) (s.auraRangeBonus * 100) + "% range");
         if (s.auraSurveillanceImmunity) aura.add("blocks Surveillance");
         if (s.auraEnemySlow > 0) aura.add("wind wall slow " + (int) (s.auraEnemySlow * 100) + "%");
@@ -551,8 +569,8 @@ public final class SidePanel extends GCompound {
         TowerType ty = t.getType();
         Color tc = Cyber.lerp(Ui.c(ty.primaryRgb), Color.WHITE, 0.3);
         boolean maxed = !t.canUpgrade();
-        String badge = t.isSuperclass() ? "SUPERCLASS" : "TIER " + t.getTier() + "/" + t.getMaxTier();
-        header(ty.displayName, tc, badge, t.isSuperclass() ? Cyber.YELLOW : Cyber.CYAN);
+        String badge = maxed ? "MAX" : "TIER " + t.getTier() + "/" + t.getMaxTier();
+        header(ty.displayName, tc, badge, maxed ? Cyber.YELLOW : Cyber.CYAN);
         y += 4;
         GLabel sub = put(d.subtitle + "  //  ", x0, y + 12, F_TXT, Cyber.MUTED);
         put(t.getTierLabel(), x0 + sub.getWidth(), y + 12, Cyber.body(Font.BOLD, 12), Cyber.CYAN);
@@ -579,8 +597,17 @@ public final class SidePanel extends GCompound {
         if (!fx.isEmpty() && !base.isSupportOnly()) para(fx, F_TXT_S, Cyber.MUTED, 2);
         String sup = supportText(base, t.canSeeCamo());
         if (!sup.isEmpty()) para(sup, F_TXT_S, Cyber.CYAN, 2);
+        if (ty == TowerType.KIMI && base.has("memoryPer")) {
+            y += 6;
+            double my = y;
+            statCell(x0, my, "memory", () -> "+" + KimiBehavior.memoryStacks(t) + " dmg  (" + KimiBehavior.memoryStacks(t) + " / " + (int) t.getStats().p("memoryCap") + ")", Cyber.MAGENTA);
+            statCell(x0 + 180, my, "next stack", () -> KimiBehavior.memoryStacks(t) >= (int) t.getStats().p("memoryCap") ? "MAX"
+                : (t.getKills() % (int) t.getStats().p("memoryPer")) + " / " + (int) t.getStats().p("memoryPer") + " pops", Cyber.TEXT);
+            y += 34;
+        }
         if (t.getAuraRateBonus() > 0 || t.getAuraDamageBonus() > 0) {
-            para("BUFFED +" + (int) (t.getAuraRateBonus() * 100) + "% speed, +" + (int) (t.getAuraDamageBonus() * 100) + "% damage", F_TXT_S, Cyber.GREEN, 1);
+            para("BUFFED " + (t.getAuraRateBonus() > 0 ? "+" + (int) Math.round(t.getAuraRateBonus() * 100) + "% speed" : "") + (t.getAuraRateBonus() > 0 && t.getAuraDamageBonus() > 0 ? ", " : "")
+                + (t.getAuraDamageBonus() > 0 ? "+" + Ui.fmt(t.getAuraDamageBonus()) + " damage" : ""), F_TXT_S, Cyber.GREEN, 1);
         }
         if (t.isSurveilled()) {
             y += 4;
@@ -626,10 +653,11 @@ public final class SidePanel extends GCompound {
             y += 12;
             put(Cyber.spaced("target [t]"), x0, y + 20, F_MICRO, Cyber.alpha(Cyber.CYAN, 230));
             if (ty == TowerType.BELLARMINE_STUDENT_AI) {
-                put("AUTO  (camo > bosses > strongest)", x0 + 86, y + 20, Cyber.body(Font.BOLD, 12), Cyber.CYAN);
+                put("AUTO  (camo and regrow first)", x0 + 86, y + 20, Cyber.body(Font.BOLD, 12), Cyber.CYAN);
             } else {
                 button(x0 + 86, y, 34, 28, "<", () -> screen.cycleTargeting(-1)).setAccent(Cyber.CYAN);
-                UIButton cur = button(x0 + 124, y, 130, 28, t.getTargeting().label.toUpperCase(), null);
+                String tl = t.getTargeting() == lindefense.tower.Targeting.DENSEST_CLUSTER ? "DENSEST CLUSTER" : t.getTargeting().label.toUpperCase();
+                UIButton cur = button(x0 + 124, y, 130, 28, tl, null);
                 cur.setSelected(true);
                 button(x0 + 258, y, 34, 28, ">", () -> screen.cycleTargeting(1)).setAccent(Cyber.CYAN);
             }
@@ -681,13 +709,13 @@ public final class SidePanel extends GCompound {
         statCell(x0, yy + 34, "lives cost", () -> String.valueOf(e.getType().lives), Cyber.RED);
         statCell(x0 + 180, yy + 34, "armour", () -> (int) (e.getType().getArmor() * 100) + "%", Cyber.TEXT);
         y += 68;
-        if (e.getType().isPhysicalImmune()) para("Immune to Physical damage", F_TXT, Cyber.YELLOW, 1);
+        if (e.isLeadType()) para("Lead-type: immune to Sharp damage", F_TXT, Cyber.YELLOW, 1);
         if (e.getType().hasChildren()) para("Releases " + e.getType().totalChildren() + " " + e.getType().getChildTypes()[0].displayName + (e.getType().getChildTypes().length > 1 ? " + " + e.getType().getChildTypes()[1].displayName : ""), F_TXT, Cyber.TEXT, 2);
         y += 4;
         para(e.getType().description, F_TXT, Cyber.MUTED, 0);
         if (e.getType().mechanic == lindefense.enemy.Mechanic.RADIX_PHASES) {
-            String[] ph = { "plain", "Physical-immune", "Energy/Magic -50%", "Explosive-immune" };
-            para("Current digit armour: " + ph[e.radixPhase()], F_TXT, Cyber.YELLOW, 1);
+            String[] ph = { "plain (layers 8-7)", "Lead-type: armoured phase 1 (layers 6-5)", "Lead-type: armoured phase 2 (layers 4-3)", "Lead-type: armoured phase 3 (layers 2-1)" };
+            para("Current phase: " + ph[e.radixPhase()], F_TXT, Cyber.YELLOW, 1);
         }
         if (!e.getStoredEnemies().isEmpty()) para("Storing " + e.getStoredEnemies().size() + " enemies", F_TXT, Cyber.YELLOW, 1);
         y += 14;

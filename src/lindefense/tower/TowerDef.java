@@ -1,15 +1,16 @@
 package lindefense.tower;
 
-/** Immutable definition of one tower: identity, base cost, base stats, 4 upgrades (5 states) and ability. */
+/** Immutable definition of one tower: identity, base cost, base stats, exactly 3 upgrades (4 states) and an ability. */
 public class TowerDef {
     public final TowerType type;
+    /** The spec's nickname, shown under the family name ("Prism Blaster"). */
     public final String subtitle;
     public final String description;
     public final int baseCost;
     public final TowerStats baseStats;
     public final UpgradeDef[] upgrades;
     public final AbilityDef ability;
-    /** Model-lineup label for each of the five progression states (base + 4 upgrades). */
+    /** Label for each of the four progression states (base + 3 upgrades): model names or hero tier names. */
     public final String[] tierLabels;
     /** Placement footprint radius. */
     public final double radius;
@@ -23,7 +24,7 @@ public class TowerDef {
         this.tierLabels = tierLabels;
     }
 
-    /** Computes the cumulative stats for a tier (0 = base .. 4 = superclass). */
+    /** Computes the cumulative stats for a tier (0 = base .. 3 = fully upgraded). */
     public TowerStats statsForTier(int tier) {
         TowerStats s = baseStats.copy();
         for (int i = 0; i < tier && i < upgrades.length; i++) upgrades[i].apply.accept(s);
@@ -36,4 +37,7 @@ public class TowerDef {
         for (int i = 0; i < tier && i < upgrades.length; i++) c += upgrades[i].cost;
         return c;
     }
+
+    /** Total cost of the fully upgraded tower (the spec's "Total"). */
+    public int totalCost() { return totalCostForTier(upgrades.length); }
 }

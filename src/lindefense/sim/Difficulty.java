@@ -33,9 +33,9 @@ public enum Difficulty {
     ON("ON", "O(N)", "O(N)", "Linear (Normal)", "Tougher enemies, more of them, weaker towers, leaner income.",
         Curve.LINEAR, 1.10, 1.50, 0.92, 0.80, 1.10, 1.40, 0, 0, 0, 0, 1, 1),
     ON2("ON2", "O(N²)", "O(N^2)", "Quadratic (Hard)", "Everything scales harder, and late waves bring elite enemies.",
-        Curve.QUADRATIC, 1.20, 2.20, 0.86, 0.60, 1.20, 2.30, 0.03, 0.60, 1, 0.35, 1, 1),
+        Curve.QUADRATIC, 1.25, 3.10, 0.84, 0.56, 1.25, 2.40, 0.03, 0.80, 2, 0.50, 1, 1),
     ONN("ONN", "O(Nᴺ)", "O(N^N)", "Super-exponential (Impossible)", "Enemy health climbs to 3x, weaker towers, half income (double starting cash), elites and extra bosses. Still beatable.",
-        Curve.SUPEREXP, 1.30, 3.00, 0.75, 0.50, 1.30, 2.40, 0.05, 0.60, 2, 0.50, 2, 1);
+        Curve.SUPEREXP, 1.30, 3.30, 0.75, 0.50, 1.30, 2.50, 0.05, 0.80, 2, 0.50, 2, 1);
 
     /** Shape of the per-wave growth curve. */
     public enum Curve { FLAT, LINEAR, QUADRATIC, SUPEREXP }
@@ -95,19 +95,15 @@ public enum Difficulty {
         PROMOTION.put(EnemyType.BUCKET_SORT, EnemyType.TIMSORT);
         // O(N^N) extra boss schedule: (wave, type, count, modifiers, start delay, interval)
         ONN.boss(25, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 12, 1);
+        ONN.boss(30, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 14, 1);
         ONN.boss(35, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 10, 1);
-        ONN.boss(45, EnemyType.BELLARMINE_COLLEGE_PREP, 2, null, 10, 6);
-        ONN.boss(50, EnemyType.SW_RESOURCE_CONSULTANT, 1, null, 12, 1);
-        ONN.boss(60, EnemyType.SW_RESOURCE_CONSULTANT, 1, null, 20, 1);
-        ONN.boss(70, EnemyType.SW_RESOURCE_CONSULTANT, 2, null, 15, 10);
-        ONN.boss(75, EnemyType.BELLARMINE_COLLEGE_PREP, 4, "F", 8, 4);
-        ONN.boss(80, EnemyType.THREE_COM, 1, null, 25, 1);
-        ONN.boss(85, EnemyType.SW_RESOURCE_CONSULTANT, 2, "F", 12, 8);
-        ONN.boss(90, EnemyType.LOCKHEED_MARTIN, 2, null, 12, 6);
-        ONN.boss(95, EnemyType.THREE_COM, 1, null, 20, 1);
-        ONN.boss(97, EnemyType.LOCKHEED_MARTIN, 2, null, 10, 6);
-        ONN.boss(99, EnemyType.SW_RESOURCE_CONSULTANT, 2, null, 15, 8);
-        ONN.boss(100, EnemyType.LOCKHEED_MARTIN, 2, "F", 12, 8);
+        ONN.boss(45, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 10, 1);
+        ONN.boss(50, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 12, 1);
+        ONN.boss(55, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 14, 1);
+        ONN.boss(65, EnemyType.BELLARMINE_COLLEGE_PREP, 1, null, 15, 1);
+        ONN.boss(70, EnemyType.SW_RESOURCE_CONSULTANT, 1, null, 15, 1);
+        ONN.boss(75, EnemyType.BELLARMINE_COLLEGE_PREP, 2, "F", 8, 4);
+        ONN.boss(85, EnemyType.BELLARMINE_COLLEGE_PREP, 2, "F", 12, 4);
     }
 
     Difficulty(String id, String label, String ascii, String subtitle, String description, Curve curve,

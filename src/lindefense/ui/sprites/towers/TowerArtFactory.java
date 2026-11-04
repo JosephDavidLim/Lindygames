@@ -6,11 +6,17 @@ import lindefense.tower.TowerType;
 public final class TowerArtFactory {
     private TowerArtFactory() { }
 
+    /** Art stages used by the four game tiers 0-3: every upgrade is a visible jump and the last one is the dramatic stage 4. */
+    private static final int[] STAGE_FOR_TIER = { 0, 2, 3, 4 };
+
+    /** Maps a game tier (0-3) to the art stage (0-4) that draws it. */
+    public static int artStage(int gameTier) { return STAGE_FOR_TIER[Math.max(0, Math.min(3, gameTier))]; }
+
     /**
      * Builds the body art for a tower.
      *
      * @param type tower type (null falls back to a generic bot)
-     * @param tier progression tier, clamped to 0-4
+     * @param tier art stage (0-4); use {@link #artStage} to convert a game tier
      * @param r    footprint radius in logical units
      */
     public static TowerArt create(TowerType type, int tier, double r) {

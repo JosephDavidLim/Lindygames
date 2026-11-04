@@ -3,22 +3,61 @@ package lindefense.combat;
 import java.util.HashSet;
 import java.util.Set;
 import lindefense.enemy.Enemy;
+import lindefense.sim.Game;
 import lindefense.sim.Vec;
 import lindefense.tower.Tower;
 import lindefense.tower.TowerStats;
 
 /**
- * A travelling projectile. Projectiles home gently on their target while it is
- * alive (so that displayed shots really land), collide with any enemy whose
- * radius they enter, and support pierce, splash, bounce and clone behaviour.
+ * A travelling projectile. Projectiles home on their target while it is alive (so displayed shots really
+ * land), collide with any enemy whose radius they enter, and support pierce, splash, bounce (with a speed gain
+ * per bounce) and clone behaviour. Build one from a {@link Shot} and fire it with {@link Combat#fire(Shot)}.
  */
 public class Projectile {
+    /** Mutable description of a shot; every field has a sensible default derived from the tower's stats. */
+    public static final class Shot {
+        public Tower source;
+        /** Stats used for sprites and defaults (the tower's stats, or a companion's own stats). */
+        public TowerStats stats;
+        public HitSpec hit;
+        public Vec start;
+        public Enemy target;
+        public double damageMult = 1;
+        public double extraDamage;
+        public int pierce = 1;
+        public int bounces;
+        public double bounceRange = 90;
+        /** Speed multiplier gained per bounce (0.10 = +10%). */
+        public double bounceSpeedGain;
+        /** Total pieces after the first hit (2 = splits into 2). */
+        public int clones;
+        public double splash;
+        public double speed = 400;
+        public boolean detection;
+        public int rgb;
+        public String tag;
+        /** Whether hits receive the source tower's buffed flat damage (companions/drones: false). */
+        public boolean buffed = true;
+
+        /** A shot for a tower with all values taken from its current stats and buffs. */
+        public static Shot of(Game game, Tower t, Vec start, Enemy target) {
+            Shot s = new Shot();
+            TowerStats st = t.getStats();
+            s.damageMult = t.damageMultiplier(game);
+            s.source = t; s.stats = st; s.hit = st.hit; s.start = start; s.target = target;
+            s.pierce = t.effectivePierce(); s.bounces = st.bounces; s.bounceRange = st.bounceRange;
+            s.bounceSpeedGain = st.p("bounceSpeedGain", 0);
+            s.clones = st.clones; s.splash = st.splashRadius;
+            s.speed = st.projectileSpeed * t.projectileSpeedMult();
+            s.detection = t.canSeeCamo(); s.rgb = t.getType().primaryRgb;
+            return s;
+        }
+    }
+
     private Vec pos;
     private Vec vel;
     private Enemy target;
-    private final Tower source;
-    private final TowerStats stats;
-    private final double damageMult;
+    private final Shot shot;
     private int pierceLeft;
     private int bouncesLeft;
     private boolean canClone;
@@ -26,25 +65,22 @@ public class Projectile {
     private double travelled;
     private final double maxTravel;
     private boolean alive = true;
+    private double speed;
+    /** Seconds spent without moving; a stalled projectile expires (fixes zero-velocity clones never ending a wave). */
     private double stalled;
-    private final double speed;
-    private final int rgb;
     private final double size;
 
-    public Projectile(Tower source, TowerStats stats, Vec start, Enemy target, double damageMult, boolean canClone, int rgb) {
-        this.source = source;
-        this.stats = stats;
-        this.pos = start;
-        this.target = target;
-        this.damageMult = damageMult;
-        this.speed = stats.projectileSpeed;
-        this.pierceLeft = Math.max(1, stats.pierce);
-        this.bouncesLeft = stats.bounces;
-        this.canClone = canClone && stats.clones > 0;
-        this.maxTravel = stats.range * 1.4 + 80;
-        this.rgb = rgb;
-        this.size = stats.splashRadius > 0 ? 8 : (stats.hit.damage >= 5 ? 7 : 5);
-        Vec dir = target.getPosition().sub(start).normalized();
+    public Projectile(Shot shot) {
+        this.shot = shot;
+        this.pos = shot.start;
+        this.target = shot.target;
+        this.speed = shot.speed;
+        this.pierceLeft = Math.max(1, shot.pierce);
+        this.bouncesLeft = shot.bounces;
+        this.canClone = shot.clones > 1;
+        this.maxTravel = shot.stats.range * 1.4 + 80;
+        this.size = shot.splash > 0 ? 8 : (shot.hit.damage >= 5 ? 7 : 5);
+        Vec dir = target.getPosition().sub(pos).normalized();
         if (dir.length() < 0.5) dir = new Vec(1, 0);
         this.vel = dir.scale(speed);
     }
@@ -52,16 +88,20 @@ public class Projectile {
     public Vec getPosition() { return pos; }
     public Vec getVelocity() { return vel; }
     public boolean isAlive() { return alive; }
-    public Tower getSource() { return source; }
-    public TowerStats getStats() { return stats; }
-    public double getDamageMult() { return damageMult; }
-    public int getRgb() { return rgb; }
+    /** The credited tower (null never happens for tower shots). */
+    public Tower getSource() { return shot.source; }
+    public TowerStats getStats() { return shot.stats; }
+    public Shot getShot() { return shot; }
+    public HitSpec getHit() { return shot.hit; }
+    public double getDamageMult() { return shot.damageMult; }
+    public int getRgb() { return shot.rgb; }
     public double getSize() { return size; }
     public Set<Integer> getHitIds() { return hitIds; }
     public Enemy getTarget() { return target; }
     public int getBouncesLeft() { return bouncesLeft; }
     public boolean canClone() { return canClone; }
     public void consumeClone() { canClone = false; }
+    public boolean hasDetection() { return shot.detection; }
     public void kill() { alive = false; }
 
     public void retarget(Enemy e) {
@@ -69,7 +109,11 @@ public class Projectile {
         if (e != null) vel = e.getPosition().sub(pos).normalized().scale(speed);
     }
 
-    public void consumeBounce() { bouncesLeft--; }
+    /** Uses up one bounce and applies the speed gain. */
+    public void consumeBounce() {
+        bouncesLeft--;
+        speed *= 1 + shot.bounceSpeedGain;
+    }
 
     /** Decrements pierce; returns true if the projectile is spent. */
     public boolean consumePierce() {
@@ -77,27 +121,35 @@ public class Projectile {
         return pierceLeft <= 0;
     }
 
-    /** Moves the projectile; returns false if it expired. */
+    /**
+     * Moves the projectile; returns false if it expired. The steering maths is done on plain doubles in exactly the
+     * order the former {@link Vec} expression used ({@code want.scale(speed / d)}, lerp, {@code normalized().scale(speed)},
+     * {@code pos.add(vel.scale(dt))}), so results are bit-identical while only the new position and velocity are
+     * allocated.
+     */
     public boolean move(double dt) {
         if (!alive) return false;
         if (target != null && target.isAlive() && !target.isStored()) {
-            Vec want = target.getPosition().sub(pos);
-            double d = want.length();
+            double wx = target.getPosition().x - pos.x, wy = target.getPosition().y - pos.y;
+            double d = Math.sqrt(wx * wx + wy * wy);
             if (d > 1) {
-                // gentle homing: blend current velocity with desired direction
-                Vec desired = want.scale(speed / d);
+                double s = speed / d;
+                double dx = wx * s, dy = wy * s;
                 double k = Math.min(1, dt * 10);
-                vel = new Vec(vel.x + (desired.x - vel.x) * k, vel.y + (desired.y - vel.y) * k).normalized().scale(speed);
+                double nx = vel.x + (dx - vel.x) * k, ny = vel.y + (dy - vel.y) * k;
+                double len = Math.sqrt(nx * nx + ny * ny);
+                vel = len < 1e-9 ? new Vec(0 * speed, 0 * speed) : new Vec(nx / len * speed, ny / len * speed);
             }
         } else if (target != null && !target.isAlive()) {
             target = null;
         }
-        Vec step = vel.scale(dt);
-        pos = pos.add(step);
-        travelled += step.length();
+        double sx = vel.x * dt, sy = vel.y * dt;
+        pos = new Vec(pos.x + sx, pos.y + sy);
+        double stepLen = Math.sqrt(sx * sx + sy * sy);
+        travelled += stepLen;
         if (travelled > maxTravel) alive = false;
         // BUGFIX (found via Difficulty calibration): a zero-velocity clone never travels and would stall wave completion forever.
-        if (step.length() < 1e-6 && (stalled += dt) > 1.0) alive = false;
+        if (stepLen < 1e-6 && (stalled += dt) > 1.0) alive = false;
         return alive;
     }
 }

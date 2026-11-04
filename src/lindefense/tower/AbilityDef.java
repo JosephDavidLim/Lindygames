@@ -1,46 +1,34 @@
 package lindefense.tower;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
- * Data for a tower's active ability. The effect is identified by {@link Effect};
- * {@link AbilityManager} implements each one.
+ * Data for a tower's active ability: name, cooldown (game seconds), whether the player must pick a location,
+ * and a named-parameter map (duration, damage, radius, ...). The effect itself is implemented by the tower's
+ * {@code TowerBehavior.activateAbility}; behaviours read numbers with {@link #p(String)}.
  */
 public class AbilityDef {
-    public enum Effect {
-        /** Self buff: rateMult / dmgMult for duration. */
-        SELF_BUFF,
-        /** Damage + control applied to every enemy within the tower's range. */
-        AREA_BLAST,
-        /** Stun every enemy on the map (bosses for bossDuration). */
-        GLOBAL_FREEZE,
-        /** Cash grant + reveal all camo for duration. */
-        DEEP_RESEARCH,
-        /** Summon temporary towers near the caster. */
-        SUMMON,
-        /** Heavy single-target strike on the strongest enemy in range. */
-        STRONGEST_STRIKE,
-        /** Strip Fortified from non-boss enemies in range; bosses take damage. */
-        QUANTIZE,
-        /** Kimi: damage = stacks * magnitude in a small area around the current target. */
-        CONTEXT_DUMP,
-        /** Copilot: rate buff to every tower within range. */
-        TEAM_RATE_BUFF,
-        /** Brad: global damage buff + clears Predictive Surveillance. */
-        COMMAND_OVERRIDE,
-        /** Bellarmine+AI: reveal all camo, stun camo enemies. */
-        REVEAL_ALL
-    }
-
     public final String name;
     public final String description;
     public final double cooldown;
-    public final Effect effect;
-    public final double duration;
-    public final double magnitude;
-    public final double secondary;
+    /** True when the ability needs a player-chosen map point ({@code Game.activateAbility(tower, point)}). */
+    public final boolean needsTarget;
+    private final Map<String, Double> params;
 
-    public AbilityDef(String name, String description, double cooldown, Effect effect,
-                      double duration, double magnitude, double secondary) {
-        this.name = name; this.description = description; this.cooldown = cooldown;
-        this.effect = effect; this.duration = duration; this.magnitude = magnitude; this.secondary = secondary;
+    public AbilityDef(String name, String description, double cooldown, boolean needsTarget, Map<String, Double> params) {
+        this.name = name; this.description = description; this.cooldown = cooldown; this.needsTarget = needsTarget;
+        this.params = Collections.unmodifiableMap(new LinkedHashMap<>(params));
     }
+
+    /** Named parameter; throws if missing so data typos fail loudly. */
+    public double p(String key) {
+        Double v = params.get(key);
+        if (v == null) throw new IllegalArgumentException("Ability " + name + " has no parameter '" + key + "'");
+        return v;
+    }
+    public double p(String key, double dflt) { Double v = params.get(key); return v == null ? dflt : v; }
+    public boolean has(String key) { return params.containsKey(key); }
+    public Map<String, Double> params() { return params; }
 }

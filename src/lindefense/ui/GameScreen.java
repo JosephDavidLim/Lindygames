@@ -12,7 +12,6 @@ import java.util.List;
 import lindefense.enemy.Enemy;
 import lindefense.sim.Game;
 import lindefense.sim.Vec;
-import lindefense.tower.Targeting;
 import lindefense.tower.Tower;
 import lindefense.tower.TowerType;
 
@@ -30,6 +29,8 @@ public final class GameScreen extends GCompound {
     private final HudPanel hud;
     private final SidePanel side;
     private final BossDock dock;
+    private final AbilityBar abilities;
+    private Tower targetingTower;
     private final GCompound overlay = new GCompound();
     private final List<UIButton> overlayButtons = new ArrayList<>();
     private Cyber.GlitchText overlayTitle;
@@ -45,6 +46,12 @@ public final class GameScreen extends GCompound {
     private Game.State shownState = Game.State.PLAYING;
     private boolean pauseShown;
     private double fxTimer;
+    private final lindefense.audio.MusicDirector musicDirector = new lindefense.audio.MusicDirector();   // AUDIO HOOK
+    private double musicTimer;
+    private AudioToggle[] pauseToggles;
+    /** Pending in-overlay confirmation of the pause menu (RESTART / QUIT LEVEL). */
+    private enum Confirm { NONE, RESTART, QUIT }
+    private Confirm menuConfirm = Confirm.NONE;
 
     public GameScreen(LindefenseProgram app, Game game) {
         this.app = app;
@@ -55,9 +62,11 @@ public final class GameScreen extends GCompound {
         dock = new BossDock(game);
         hud = new HudPanel(this);
         side = new SidePanel(this);
+        abilities = new AbilityBar(this);
         add(world);
         add(dock);
         add(hud);
+        add(abilities);
         add(side);
         buildBrackets();
         add(overlay);
@@ -88,6 +97,8 @@ public final class GameScreen extends GCompound {
     public Tower getSelectedTower() { return selectedTower; }
     public Enemy getSelectedEnemy() { return selectedEnemy; }
     public Vec getMouseWorld() { return mouseWorld; }
+    /** Tower whose targeted ability is waiting for a map click (targeting mode), or null. */
+    public Tower getTargetingTower() { return targetingTower; }
     /** Last mouse position in logical coordinates {x, y}. */
     public double[] getMouseLogical() { return new double[] { mouseLx, mouseLy }; }
     public SidePanel getSidePanel() { return side; }
@@ -97,7 +108,7 @@ public final class GameScreen extends GCompound {
     // ------------------------------------------------------------------ actions
     public void beginPlacing(TowerType t) {
         placing = t;
-        if (t != null) { selectedTower = null; selectedEnemy = null; }
+        if (t != null) { selectedTower = null; selectedEnemy = null; targetingTower = null; }
         side.requestRebuild();
     }
 
@@ -119,6 +130,23 @@ public final class GameScreen extends GCompound {
     public void toggleAuto() { game.getWaveManager().setAutoStart(!game.getWaveManager().isAutoStart()); }
     public void backToMenu() { app.showMenu(); }
 
+    /** MENU button / Esc: pauses the game and opens the pause menu (resume, restart, sound, music, quit level, main menu). */
+    public void openMenu() {
+        if (game.getState() != Game.State.PLAYING) return;
+        helpShown = false;
+        menuConfirm = Confirm.NONE;
+        game.setPaused(true);
+        buildOverlay();
+    }
+
+    /** True while the pause menu overlay is showing. */
+    public boolean isMenuOpen() { return game.getState() == Game.State.PLAYING && game.isPaused(); }
+    /** Logic of the confirmation step, exposed for tests: 0 none, 1 restart, 2 quit. */
+    public int getPendingConfirm() { return menuConfirm.ordinal(); }
+
+    private void setConfirm(Confirm c) { menuConfirm = c; buildOverlay(); }
+    private void resumeGame() { menuConfirm = Confirm.NONE; game.setPaused(false); buildOverlay(); }
+
     /** Opens / closes the full controls and modifier reference overlay (H key or the HELP button). */
     public void toggleHelp() { helpShown = !helpShown; buildOverlay(); }
 
@@ -131,13 +159,61 @@ public final class GameScreen extends GCompound {
     }
 
     public void abilitySelected() {
-        if (selectedTower != null) { game.activateAbility(selectedTower); side.requestRebuild(); }
+        if (selectedTower != null) fireAbility(selectedTower);
+    }
+
+    // ---- abilities: click-to-fire, targeting mode, refusal messages
+    /** Fires a tower's ability; a targeted one enters targeting mode instead. Refusals are shown above the ability bar. */
+    public void fireAbility(Tower t) {
+        if (t == null || !t.isAlive() || t.getAbility() == null) return;
+        if (game.getState() != Game.State.PLAYING) return;
+        String why = abilityRefusal(t);
+        if (why != null) { abilities.showHint(t.getAbility().name + ": " + why, Cyber.RED, 2.5); return; }
+        if (t.getAbility().needsTarget) {
+            targetingTower = t;
+            placing = null;
+            abilities.clearHint();
+            side.requestRebuild();
+            return;
+        }
+        if (game.activateAbility(t)) abilities.showHint(t.getAbility().name + "!", Cyber.GREEN, 1.2);
+        else abilities.showHint(t.getAbility().name + ": no enemy in range", Cyber.RED, 2.5);
+        side.requestRebuild();
+    }
+
+    /** Why the ability cannot be used right now (null if it can be tried). */
+    private String abilityRefusal(Tower t) {
+        if (t.isSurveilled()) return "offline (surveillance)";
+        if (!t.isAbilityReady()) return String.format("recharging (%.0fs)", Math.ceil(t.getAbilityCooldownRemaining()));
+        return null;
+    }
+
+    /** Casts the armed targeted ability at a world point; stays armed (with a message) if the sim refuses. */
+    private void castTargeted(Vec w) {
+        Tower t = targetingTower;
+        if (t == null) return;
+        if (!t.isAlive()) { cancelTargeting(); return; }
+        if (game.activateAbility(t, w)) {
+            abilities.showHint(t.getAbility().name + "!", Cyber.GREEN, 1.2);
+            targetingTower = null;
+            side.requestRebuild();
+        } else {
+            String why = abilityRefusal(t);
+            abilities.showHint(t.getAbility().name + ": " + (why != null ? why : "no valid track point there"), Cyber.RED, 2.5);
+            if (why != null) cancelTargeting();
+        }
+    }
+
+    public void cancelTargeting() {
+        if (targetingTower == null) return;
+        targetingTower = null;
+        abilities.clearHint();
+        side.requestRebuild();
     }
 
     public void cycleTargeting(int dir) {
         if (selectedTower == null) return;
-        Targeting t = selectedTower.getTargeting();
-        selectedTower.setTargeting(dir > 0 ? t.next() : t.prev());
+        selectedTower.cycleTargeting(dir);
         side.requestRebuild();
     }
 
@@ -148,6 +224,7 @@ public final class GameScreen extends GCompound {
         List<UIButton> all = new ArrayList<>(overlayButtons);
         all.addAll(hud.getButtons());
         all.addAll(side.getButtons());
+        all.addAll(abilities.getButtons());
         return all;
     }
 
@@ -155,9 +232,10 @@ public final class GameScreen extends GCompound {
         mouseMoved(lx, ly);
         if (!overlayButtons.isEmpty()) {
             for (UIButton b : overlayButtons) if (b.hit(lx, ly)) { b.click(); return; }
-            if (game.getState() != Game.State.PLAYING || helpShown) return;
+            if (game.getState() != Game.State.PLAYING || helpShown || game.isPaused()) return;
         }
         if (rightButton) {
+            if (targetingTower != null) { cancelTargeting(); return; }
             if (placing != null) beginPlacing(null);
             else { selectTower(null); selectEnemy(null); }
             return;
@@ -168,6 +246,7 @@ public final class GameScreen extends GCompound {
         if (lx >= Ui.PANEL_X) return;
         Vec w = toWorld(lx, ly);
         if (w == null) return;
+        if (targetingTower != null) { castTargeted(w); return; }
         if (placing != null) {
             Tower t = game.placeTower(placing, w);
             if (t != null) {
@@ -206,20 +285,36 @@ public final class GameScreen extends GCompound {
             case KeyEvent.VK_H: toggleHelp(); break;
             case KeyEvent.VK_ESCAPE:
                 if (helpShown) { toggleHelp(); break; }
-                if (placing != null) beginPlacing(null); else { selectTower(null); selectEnemy(null); }
+                if (isMenuOpen()) { if (menuConfirm != Confirm.NONE) setConfirm(Confirm.NONE); else resumeGame(); break; }
+                if (targetingTower != null) { cancelTargeting(); break; }
+                if (placing != null) beginPlacing(null);
+                else if (selectedTower != null || selectedEnemy != null) { selectTower(null); selectEnemy(null); }
+                else openMenu();
                 break;
             case KeyEvent.VK_U: upgradeSelected(); break;
             case KeyEvent.VK_S: sellSelected(); break;
             case KeyEvent.VK_A: abilitySelected(); break;
             case KeyEvent.VK_T: cycleTargeting(1); break;
             case KeyEvent.VK_B: toggleShopAll(); break;
+            // M (music) and N (sound) are handled globally in LindefenseProgram.keyPressed
             default: break;
         }
     }
 
     // ------------------------------------------------------------------ frame
+    /**
+     * Most fixed simulation steps ({@link Game#DT}) run for one rendered frame. At 60 fps a frame needs 1-3 steps
+     * (1x-3x speed); the cap leaves room to catch up after a hiccup, but when frames stay slow the game runs slower
+     * than real time instead of spending ever longer frames on simulation (the "spiral of death" at 3x).
+     */
+    public static final int MAX_SIM_STEPS_PER_FRAME = 8;
+
+    /**
+     * One rendered frame: advances the simulation (fixed steps, capped by {@link #MAX_SIM_STEPS_PER_FRAME}, the
+     * remainder of a step carried over by {@link Game#advance}) and then updates every view from the new state.
+     */
     public void frame(double realDt) {
-        game.advance(realDt);
+        game.advance(Math.min(realDt, MAX_SIM_STEPS_PER_FRAME * Game.DT / Math.max(1, game.getSpeed())));
         if (selectedTower != null && !selectedTower.isAlive()) selectTower(null);
         if (selectedEnemy != null && (!selectedEnemy.isAlive() && game.getTime() - selectedEnemy.getLastHitTime() > 3)) selectEnemy(null);
         dock.update(realDt);
@@ -231,6 +326,8 @@ public final class GameScreen extends GCompound {
         world.update(realDt);
         hud.update(realDt);
         side.update(realDt);
+        if (targetingTower != null && !targetingTower.isAlive()) cancelTargeting();
+        abilities.update(realDt);
         for (UIButton b : allButtons()) b.animate(realDt);
         if (overlayTitle != null) {
             glitchTimer -= realDt;
@@ -238,9 +335,37 @@ public final class GameScreen extends GCompound {
             overlayTitle.animate(realDt);
         }
         if (game.isVictorySequenceActive()) victoryFireworks(realDt);
+        updateMusic(realDt);
+        if (pauseToggles != null) AudioToggle.syncAll(pauseToggles);
         Game.State st = game.getState();
-        if (st != shownState) { shownState = st; buildOverlay(); }
+        if (st != shownState) {
+            shownState = st;
+            buildOverlay();
+            // AUDIO HOOK: end-of-game stingers
+            if (st == Game.State.VICTORY) lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.VICTORY);
+            else if (st == Game.State.DEFEAT) lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.DEFEAT);
+        }
         else if (st == Game.State.PLAYING && game.isPaused() != pauseShown) buildOverlay();
+    }
+
+    private Game.State shownMusicState;
+
+    /** AUDIO HOOK: picks the music track from the game situation about 4 times a second. */
+    private void updateMusic(double dt) {
+        lindefense.audio.AudioManager am = lindefense.audio.AudioManager.get();
+        if (am == null) return;
+        musicTimer -= dt;
+        Game.State st = game.getState();
+        if (musicTimer > 0 && st == shownMusicState) return;
+        musicTimer = 0.25;
+        shownMusicState = st;
+        boolean palantir = false, boss = false;
+        for (Enemy e : game.getEnemyManager().getEnemies()) {
+            if (!e.getType().isBoss() || !e.isAlive()) continue;
+            if (e.getType() == lindefense.enemy.EnemyType.PALANTIR) palantir = true; else boss = true;
+        }
+        am.setMusic(musicDirector.choose(st == Game.State.VICTORY, st == Game.State.DEFEAT, game.getWave(),
+            game.getDifficulty() == lindefense.sim.Difficulty.ONN, palantir, boss, game.getTime()));
     }
 
     private void victoryFireworks(double dt) {
@@ -258,10 +383,12 @@ public final class GameScreen extends GCompound {
         overlay.removeAll();
         overlayButtons.clear();
         overlayTitle = null;
+        pauseToggles = null;
         pauseShown = game.isPaused();
         Game.State st = game.getState();
         if (helpShown && st == Game.State.PLAYING) { buildHelpOverlay(); return; }
-        if (st == Game.State.PLAYING && !game.isPaused()) return;
+        if (st == Game.State.PLAYING && !game.isPaused()) { menuConfirm = Confirm.NONE; return; }
+        if (st == Game.State.PLAYING) { buildMenuOverlay(); return; }
         boolean ended = st != Game.State.PLAYING;
         overlay.add(Ui.rect(Ui.WORLD_X, Ui.WORLD_Y, Ui.WORLD_W, Ui.WORLD_H, Ui.c(0x02040a, ended ? 190 : 140), Ui.c(0x000000, 0)));
         double cx = Ui.WORLD_X + Ui.WORLD_W / 2.0, cy = Ui.WORLD_Y + Ui.WORLD_H / 2.0;
@@ -273,8 +400,7 @@ public final class GameScreen extends GCompound {
             title = "DEFEAT"; col = Cyber.RED; micro = "// system breach";
             sub = "Your defenses were breached on wave " + game.getWave() + ".";
         } else {
-            title = "PAUSED"; col = Cyber.CYAN; micro = "// simulation halted";
-            sub = "Press P or the play button to resume.";
+            return;   // PLAYING is handled by buildMenuOverlay()
         }
         double pw = 720, ph = ended ? 404 : 270;
         double px = cx - pw / 2, py = cy - ph / 2;
@@ -322,15 +448,65 @@ public final class GameScreen extends GCompound {
             menu.setAccent(Cyber.MAGENTA);
             overlay.add(again); overlay.add(menu);
             overlayButtons.add(again); overlayButtons.add(menu);
-        } else {
-            UIButton resume = new UIButton(cx - 250, py + ph - 76, 240, 50, "RESUME", Cyber.display(Font.BOLD, 22), () -> game.setPaused(false));
-            resume.setPrimary(true);
-            resume.setIcon(Cyber.Kind.PLAY);
-            UIButton menu = new UIButton(cx + 10, py + ph - 76, 240, 50, "MAIN MENU", Cyber.display(Font.BOLD, 22), () -> app.showMenu());
-            menu.setAccent(Cyber.MAGENTA);
-            overlay.add(resume); overlay.add(menu);
-            overlayButtons.add(resume); overlayButtons.add(menu);
         }
+        refreshHover();
+    }
+
+    private UIButton menuButton(double x, double y, double w, double h, String text, Cyber.Kind icon, Color accent, Runnable r) {
+        UIButton b = new UIButton(x, y, w, h, text, Cyber.display(Font.BOLD, 20), r);
+        if (icon != null) b.setIcon(icon);
+        if (accent != null) b.setAccent(accent);
+        overlay.add(b);
+        overlayButtons.add(b);
+        return b;
+    }
+
+    /** The pause menu: RESUME, RESTART, SOUND EFFECTS, MUSIC, QUIT LEVEL, MAIN MENU (or a Yes / No confirmation). */
+    private void buildMenuOverlay() {
+        overlay.add(Ui.rect(Ui.WORLD_X, Ui.WORLD_Y, Ui.WORLD_W, Ui.WORLD_H, Ui.c(0x02040a, 150), Ui.c(0x000000, 0)));
+        double cx = Ui.WORLD_X + Ui.WORLD_W / 2.0, cy = Ui.WORLD_Y + Ui.WORLD_H / 2.0;
+        boolean confirm = menuConfirm != Confirm.NONE;
+        Color col = confirm ? Cyber.RED : Cyber.CYAN;
+        double pw = confirm ? 600 : 500, ph = confirm ? 320 : 520;
+        double px = cx - pw / 2, py = cy - ph / 2;
+        overlay.add(new Cyber.Chamfer(px, py, pw, ph, 26).fill(new Color(6, 10, 24, 238)).border(col).glow(1.1).lineWidth(2).ticks(true));
+        overlay.add(Ui.rect(px + 24, py + 12, 140, 3, Cyber.MAGENTA, Cyber.MAGENTA));
+        String micro = confirm ? "// confirm" : "// simulation halted";
+        GLabel m = Ui.label(Cyber.spaced(micro), 0, py + 44, Cyber.mono(Font.BOLD, 12), Cyber.alpha(col, 230));
+        m.setLocation(cx - m.getWidth() / 2, py + 44);
+        overlay.add(m);
+        String title = confirm ? (menuConfirm == Confirm.RESTART ? "RESTART?" : "QUIT LEVEL?") : "PAUSED";
+        Cyber.GlitchText t = new Cyber.GlitchText(title, Cyber.display(Font.BOLD, confirm ? 56 : 64), Cyber.lerp(col, Color.WHITE, 0.3));
+        t.setLocation(cx - t.textWidth() / 2, py + (confirm ? 114 : 118));
+        overlay.add(t);
+        overlayTitle = t;
+        glitchTimer = 2.5;
+        if (confirm) {
+            String q = menuConfirm == Confirm.RESTART ? "Restart level? Progress will be lost." : "Quit level? Progress will be lost.";
+            GLabel s = Ui.label(q, 0, py + 160, Cyber.body(Font.PLAIN, 17), Cyber.TEXT);
+            s.setLocation(cx - s.getWidth() / 2, py + 160);
+            overlay.add(s);
+            Runnable yes = menuConfirm == Confirm.RESTART ? app::restartLevel : app::quitLevel;
+            UIButton y = menuButton(cx - 260, py + ph - 90, 250, 54, "YES", Cyber.Kind.CHECK, Cyber.RED, yes);
+            y.setPrimary(true);
+            UIButton n = menuButton(cx + 10, py + ph - 90, 250, 54, "NO", null, Cyber.CYAN, () -> setConfirm(Confirm.NONE));
+            refreshHover();
+            return;
+        }
+        GLabel hint = Ui.label("P / Esc to resume", 0, py + 146, Cyber.mono(Font.BOLD, 12), Cyber.MUTED);
+        hint.setLocation(cx - hint.getWidth() / 2, py + 146);
+        overlay.add(hint);
+        double bw = 400, bx = cx - bw / 2, by = py + 172, bh = 46, gap = 10;
+        UIButton resume = menuButton(bx, by, bw, bh, "RESUME", Cyber.Kind.PLAY, null, this::resumeGame);
+        resume.setPrimary(true);
+        menuButton(bx, by + (bh + gap), bw, bh, "RESTART", Cyber.Kind.AUTO, Cyber.YELLOW, () -> setConfirm(Confirm.RESTART));
+        AudioToggle snd = AudioToggle.sound(bx, by + 2 * (bh + gap), bw, bh, "SOUND EFFECTS:");
+        AudioToggle mus = AudioToggle.music(bx, by + 3 * (bh + gap), bw, bh, "MUSIC:");
+        pauseToggles = new AudioToggle[] { snd, mus };
+        for (AudioToggle at : pauseToggles) { overlay.add(at.getButton()); overlayButtons.add(at.getButton()); }
+        menuButton(bx, by + 4 * (bh + gap), bw, bh, "QUIT LEVEL", Cyber.Kind.SKULL, Cyber.RED, () -> setConfirm(Confirm.QUIT));
+        menuButton(bx, by + 5 * (bh + gap), bw, bh, "MAIN MENU", Cyber.Kind.MENU, Cyber.MAGENTA, this::backToMenu);
+        AudioToggle.syncAll(pauseToggles);
         refreshHover();
     }
 
@@ -343,8 +519,8 @@ public final class GameScreen extends GCompound {
         overlay.add(Ui.label(Cyber.spaced("// field manual"), px + 34, py + 40, Cyber.mono(Font.BOLD, 12), Cyber.alpha(Cyber.MAGENTA, 230)));
         overlay.add(Ui.label("HELP", px + 34, py + 80, Cyber.display(Font.BOLD, 40), Cyber.TEXT));
         String[][] keys = { { "SPACE", "start next wave" }, { "1  2  3", "game speed" }, { "P", "pause / resume" }, { "B", "all towers / faction tabs" },
-            { "ESC", "cancel / deselect (or right-click)" }, { "U", "upgrade selected tower" }, { "S", "sell selected tower" }, { "A", "fire selected tower's ability" },
-            { "T", "cycle targeting priority" }, { "H", "toggle this help" } };
+            { "ESC", "cancel / deselect, else pause menu" }, { "U", "upgrade selected tower" }, { "S", "sell selected tower" }, { "A", "fire selected tower's ability" },
+            { "T", "cycle targeting priority" }, { "M", "music on / off" }, { "N", "sound on / off" }, { "H", "toggle this help" } };
         double ky = py + 126;
         overlay.add(Ui.label(Cyber.spaced("// controls"), px + 34, ky, Cyber.mono(Font.BOLD, 11), Cyber.CYAN));
         for (String[] k : keys) {
@@ -354,9 +530,9 @@ public final class GameScreen extends GCompound {
         }
         double rx = px + 470, ry = py + 126, rw = pw - 470 - 34;
         String[][] notes = {
-            { "enemy modifiers", "Camo enemies need detection (Perplexity, Bellarmine Student + AI, Brad). Regrow enemies heal over time. Fortified enemies carry double HP." },
+            { "enemy modifiers", "Camo enemies need detection (Perplexity, Grok, Student + AI, or Gemini / Llama after their second upgrade). Regrow enemies heal over time. Fortified enemies carry double HP." },
             { "economy", "Enemies pay cash when destroyed and every wave pays a bonus. Selling refunds most of what you spent on a tower." },
-            { "bosses", "Boss health shows in the dock under the top bar. Palantir (wave " + lindefense.wave.WaveData.WAVE_COUNT + ") disrupts your strongest towers with Predictive Surveillance; watch the telegraph." } };
+            { "bosses", "Boss health shows in the dock under the top bar. Palantir (wave " + lindefense.wave.WaveData.WAVE_COUNT + ") disrupts your strongest towers with Predictive Surveillance; watch the telegraph. Towers near Perplexity are immune." } };
         for (String[] n : notes) {
             overlay.add(Ui.label(Cyber.spaced("// " + n[0]), rx, ry, Cyber.mono(Font.BOLD, 11), Cyber.CYAN));
             for (String l : Ui.wrap(n[1], Cyber.body(Font.PLAIN, 14), rw)) { ry += 20; overlay.add(Ui.label(l, rx, ry, Cyber.body(Font.PLAIN, 14), Cyber.MUTED)); }

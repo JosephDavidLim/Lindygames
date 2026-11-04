@@ -25,6 +25,13 @@ import lindefense.sim.Game;
  *
  * <p>The simulation is advanced from a Swing timer on the event-dispatch thread,
  * which is also where ACM delivers mouse and key events, so no locking is needed.</p>
+ *
+ * <h3>Frame loop</h3>
+ * The timer fires about every {@value #FRAME_MS} ms (so at most ~60 frames per second are produced) and coalesces:
+ * if a frame is still being painted when the next tick is due, ticks are merged instead of queuing up, and the
+ * mouse and key events waiting on the event thread are handled between frames. Each frame advances the simulation in
+ * fixed {@link lindefense.sim.Game#DT} steps (capped per frame by {@link GameScreen#MAX_SIM_STEPS_PER_FRAME}),
+ * updates the views and requests one repaint; Swing merges repaint requests, so each frame is painted once.
  */
 public class LindefenseProgram extends GraphicsProgram {
     private static final long serialVersionUID = 1L;
@@ -49,10 +56,26 @@ public class LindefenseProgram extends GraphicsProgram {
         setBackground(Ui.BG);
     }
 
+    /**
+     * Canvas settings shared by the game and the offscreen benchmark ({@code tools.PerfBench}):
+     * <ul>
+     *   <li>auto-repaint off: the frame loop repaints once per frame instead of on every GObject mutation;</li>
+     *   <li>native arcs on: {@code GOval} / {@code GArc} are painted with Java2D's curve-based arcs instead of ACM's
+     *       fallback {@code ArcRenderer}, which converts every oval into an integer polygon of about
+     *       {@code 2 * PI * diameter} vertices (190 for a 30 px enemy, 600+ for a range ring) that then has to be
+     *       anti-aliased and stroked vertex by vertex. Profiling showed that fallback alone was about 70% of frame time
+     *       in large fights.</li>
+     * </ul>
+     */
+    public static void configureCanvas(GCanvas canvas) {
+        canvas.setAutoRepaintFlag(false);
+        canvas.setNativeArcFlag(true);
+    }
+
     @Override public void run() {
         GCanvas canvas = getGCanvas();
         canvas.setBackground(Ui.BG);
-        canvas.setAutoRepaintFlag(false);
+        configureCanvas(canvas);
         Window win = SwingUtilities.getWindowAncestor(canvas);
         if (win instanceof JFrame) {
             JFrame f = (JFrame) win;
@@ -70,11 +93,13 @@ public class LindefenseProgram extends GraphicsProgram {
         });
         addMouseListeners();
         addKeyListeners();
+        lindefense.audio.AudioManager.install();   // AUDIO HOOK: preload SFX / open output on a background thread
         showMenu();
         String demoDir = System.getProperty("lindefense.demo");
         if (demoDir != null) demo = new DemoDriver(this, demoDir);
         lastNanos = System.nanoTime();
         timer = new Timer(FRAME_MS, e -> frame());
+        timer.setCoalesce(true);
         timer.start();
     }
 
@@ -103,6 +128,7 @@ public class LindefenseProgram extends GraphicsProgram {
         clearScreens();
         menu = new MenuScreen(this);
         root.add(menu);
+        lindefense.audio.AudioManager.menuMusic();   // AUDIO HOOK
         getGCanvas().repaint();
     }
 
@@ -111,14 +137,28 @@ public class LindefenseProgram extends GraphicsProgram {
         menu = null;
         mapSelect = new MapSelectScreen(this);
         root.add(mapSelect);
+        lindefense.audio.AudioManager.menuMusic();   // AUDIO HOOK
         getGCanvas().repaint();
     }
 
     public void startGame(int mapIndex) {
+        lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_SELECT);   // AUDIO HOOK
+        startGame(new Game(MapCatalog.create(mapIndex), System.nanoTime(), lindefense.sim.Difficulty.getSelected()));   // DIFFICULTY HOOK
+    }
+
+    /** RESTART: throws the running level away and starts a fresh game on the same map and difficulty. */
+    public void restartLevel() {
+        if (gameScreen == null) return;
+        startGame(Game.freshCopy(gameScreen.getGame()));
+    }
+
+    /** QUIT LEVEL: abandons the running level and returns to the map / difficulty select screen. */
+    public void quitLevel() { showMapSelect(); }
+
+    private void startGame(Game game) {
         clearScreens();
         menu = null;
         mapSelect = null;
-        Game game = new Game(MapCatalog.create(mapIndex), System.nanoTime(), lindefense.sim.Difficulty.getSelected());   // DIFFICULTY HOOK
         gameScreen = new GameScreen(this, game);
         root.add(gameScreen);
         getGCanvas().requestFocusInWindow();
@@ -172,6 +212,12 @@ public class LindefenseProgram extends GraphicsProgram {
     @Override public void mouseDragged(MouseEvent e) { mouseMoved(e); }
 
     @Override public void keyPressed(KeyEvent e) {
+        // AUDIO HOOK: M toggles music, N toggles sound, on every screen
+        lindefense.audio.AudioManager am = lindefense.audio.AudioManager.get();
+        if (am != null && (e.getKeyCode() == KeyEvent.VK_M || e.getKeyCode() == KeyEvent.VK_N)) {
+            if (e.getKeyCode() == KeyEvent.VK_M) am.toggleMusic(); else am.toggleSound();
+            return;
+        }
         if (gameScreen != null) gameScreen.keyPressed(e);
         else if (e.getKeyCode() == KeyEvent.VK_ESCAPE && mapSelect != null) showMenu();
         else if (menu != null) menu.skipIntro();

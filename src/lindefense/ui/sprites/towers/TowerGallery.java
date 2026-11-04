@@ -130,14 +130,14 @@ public class TowerGallery extends GraphicsProgram {
             }
         }
         // icons
-        label("TowerIcons.create(type, tier, 56) for tiers 0 and 4", 20, 370, F);
+        label("TowerIcons.create(type, tier, 56) for game tiers 0 and 3", 20, 370, F);
         for (int t = 0; t < 2; t++) {
             for (int i = 0; i < all.length; i++) {
                 double cx = 50 + i * 66, cy = 410 + t * 70;
                 GRect box = new GRect(cx - 28, cy - 28, 56, 56);
                 box.setColor(new Color(0xffffff));
                 add(box);
-                GCompound icon = TowerIcons.create(all[i], t == 0 ? 0 : 4, 56);
+                GCompound icon = TowerIcons.create(all[i], t == 0 ? 0 : 3, 56);
                 add(icon, cx, cy);
             }
         }

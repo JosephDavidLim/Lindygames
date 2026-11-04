@@ -35,6 +35,13 @@ import lindefense.sim.Vec;
  *       marked (red reticle), revealed (white ring), disrupted (magenta glitch),</li>
  *   <li>facing: rotation of polygons registered with {@link #rpoly} and
  *       re-placement of objects registered with {@link #orbit}.</li>
+ *   <li>level of detail: the build helpers tag purely decorative parts so the
+ *       world view can skip them when the screen is crowded (see
+ *       {@link Thick#setLevel}): {@link Thick#DETAIL_DECOR} for the drop shadow,
+ *       gloss highlights, damage cracks and the small overlay accents (rivets,
+ *       frost flakes, reticle ticks, regrow motes); {@link Thick#DETAIL_FINE} for
+ *       the cartoon eyes, while {@link #thin} parts keep their fill but lose their
+ *       outline at that tier. Bosses are never reduced.</li>
  * </ul>
  */
 @SuppressWarnings({ "serial", "this-escape" })
@@ -106,6 +113,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
         shadow.setFillColor(Art.SHADOW);
         shadow.setColor(new Color(0, 0, 0, 0));
         ((Thick.Oval) shadow).setLineWidth(0);
+        lod(shadow, Thick.DETAIL_DECOR);
         add(shadow);
         if (e.isRegrow()) buildRegrow();
     }
@@ -133,6 +141,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
     protected GOval highlight(double cx, double cy, double w, double h) {
         Thick.Oval o = Art.ovalAt(cx, cy, w, h);
         o.setLineWidth(0);
+        lod(o, Thick.DETAIL_DECOR);
         return fixed(o, Art.HIGHLIGHT, new Color(255, 255, 255, 0));
     }
 
@@ -146,9 +155,21 @@ public abstract class EnemySprite extends GCompound implements Animated {
         return big;
     }
 
-    /** Marks a registered part as a small detail: thin outline. */
+    /** Marks a registered part as a small detail: thin outline (dropped, fill kept, in very large crowds). */
     protected <T extends GObject> T thin(T g) {
-        if (g instanceof Thick.Outlined) ((Thick.Outlined) g).setLineWidth(Thick.DETAIL);
+        if (g instanceof Thick.Outlined) {
+            ((Thick.Outlined) g).setLineWidth(Thick.DETAIL);
+            if (!type.isBoss()) ((Thick.Outlined) g).setOutlineDetail(Thick.DETAIL_FINE);
+        }
+        return g;
+    }
+
+    /**
+     * Tags a part with a level-of-detail tier ({@link Thick#DETAIL_DECOR} or {@link Thick#DETAIL_FINE}) so it is
+     * skipped when the world view paints a crowded screen. Boss parts are never tagged.
+     */
+    protected <T extends GObject> T lod(T g, int tier) {
+        if (!type.isBoss() && g instanceof Thick.Outlined) ((Thick.Outlined) g).setDetail(tier);
         return g;
     }
 
@@ -222,10 +243,10 @@ public abstract class EnemySprite extends GCompound implements Animated {
             double ex = cx + (i == 0 ? -1 : 1) * spacing / 2;
             Thick.Oval white = Art.ovalAt(ex, cy, size, size * 1.1);
             white.setLineWidth(Thick.DETAIL);
-            out[2 * i] = fixed(white, Color.WHITE, Art.OUTLINE);
+            out[2 * i] = fixed(lod(white, Thick.DETAIL_FINE), Color.WHITE, Art.OUTLINE);
             Thick.Oval pupil = Art.ovalAt(ex + size * 0.12, cy + size * 0.08, size * 0.45, size * 0.5);
             pupil.setLineWidth(0);
-            out[2 * i + 1] = fixed(pupil, Art.OUTLINE, Art.OUTLINE);
+            out[2 * i + 1] = fixed(lod(pupil, Thick.DETAIL_FINE), Art.OUTLINE, Art.OUTLINE);
         }
         return out;
     }
@@ -327,16 +348,16 @@ public abstract class EnemySprite extends GCompound implements Animated {
             double sx = Math.cos(Math.toRadians(a)) * radius * 0.25;
             double sy = Math.sin(Math.toRadians(a)) * radius * 0.25;
             cs[i] = Art.crack(sx, sy, radius * 0.7, a, i + 3);
-            fixed(cs[i], Art.OUTLINE, Art.OUTLINE);
+            fixed(lod(cs[i], Thick.DETAIL_DECOR), Art.OUTLINE, Art.OUTLINE);
             cs[i].setVisible(false);
         }
         return cs;
     }
 
-    /** Shows the first {@code floor(dmg * n)} cracks. */
+    /** Shows the first {@code floor(dmg * n)} cracks (only touching the ones that change). */
     protected static void showCracks(GPolygon[] cracks, double dmg) {
         int show = (int) Math.floor(dmg * cracks.length + 1e-6);
-        for (int i = 0; i < cracks.length; i++) cracks[i].setVisible(i < show);
+        for (int i = 0; i < cracks.length; i++) if (cracks[i].isVisible() != (i < show)) cracks[i].setVisible(i < show);
     }
 
     /** Layer count still intact for an enemy with {@code layers} segments. */
@@ -360,6 +381,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
             regrowMotes[i].setFilled(true);
             regrowMotes[i].setFillColor(Art.alpha(Art.REGROW, 220));
             regrowMotes[i].setColor(Art.alpha(Art.REGROW, 220));
+            lod(regrowMotes[i], Thick.DETAIL_DECOR);
             add(regrowMotes[i]);
         }
     }
@@ -389,6 +411,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
             rivets[i].setFillColor(Art.STEEL);
             rivets[i].setColor(Art.OUTLINE);
             ((Thick.Oval) rivets[i]).setLineWidth(Thick.DETAIL);
+            lod(rivets[i], Thick.DETAIL_DECOR);
             add(rivets[i]);
         }
         setFort(false);
@@ -404,6 +427,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
             frostFlake[i] = Art.line(fx - Math.cos(a) * fl, fy - Math.sin(a) * fl, fx + Math.cos(a) * fl, fy + Math.sin(a) * fl);
             frostFlake[i].setColor(Color.WHITE);
             ((Thick.Line) frostFlake[i]).setLineWidth(1.6);
+            lod(frostFlake[i], Thick.DETAIL_DECOR);
             add(frostFlake[i]);
         }
         // Stunned: orbiting stars
@@ -429,6 +453,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
             markTicks[i] = Art.line(x1, y1, x2, y2);
             markTicks[i].setColor(Art.MARK);
             ((Thick.Line) markTicks[i]).setLineWidth(2.0);
+            lod(markTicks[i], Thick.DETAIL_DECOR);
             add(markTicks[i]);
         }
         // Revealed: white ring
@@ -487,7 +512,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
         hpFrac = Math.max(0, Math.min(1, e.getHpFraction()));
         dmg = 1 - hpFrac;
         Vec p = e.getPosition();
-        setLocation(p.x, p.y);
+        if (p.x != getX() || p.y != getY()) setLocation(p.x, p.y);
         if (e.getRoute() != null) {
             Vec d = e.getRoute().directionAt(e.getDistance());
             if (d.x != 0 || d.y != 0) {
@@ -553,7 +578,7 @@ public abstract class EnemySprite extends GCompound implements Animated {
             disruptZig.setVisible(show);
             disruptZig.setLocation(0, ((int) (timeSeconds * 9) % 3 - 1) * r * 0.25);
         }
-        shadow.setVisible(!camo || revealed);
+        if (shadow.isVisible() != (!camo || revealed)) shadow.setVisible(!camo || revealed);
     }
 
     /**

@@ -14,10 +14,14 @@ import lindefense.sim.Vec;
  */
 public class TowerManager {
     private static final int AURA_REFRESH_TICKS = 6;
+    private static final int FIELD_REFRESH_TICKS = 3;
+    private static final double FIELD_STATUS_TIME = 0.3;
 
     private final Game game;
     private final List<Tower> towers = new ArrayList<>();
     private final List<Tower> pending = new ArrayList<>();
+    /** Grid query buffer for {@link #applyEnemyField} (statuses only, nothing re-enters while it is in use). */
+    private final List<Enemy> near = new ArrayList<>();
     private int tickCounter;
 
     public TowerManager(Game game) { this.game = game; }
@@ -40,6 +44,7 @@ public class TowerManager {
     /** Returns null if a tower of this type can be placed at p, otherwise the reason it cannot. */
     public String placementProblem(TowerType type, Vec p) {
         TowerDef def = TowerCatalog.get(type);
+        if (type.isHero() && heroPlaced(type)) return "Only one " + type.displayName + " allowed";
         if (!game.getMap().isBuildable(p, def.radius)) return "Cannot build here";
         for (Tower t : towers) {
             if (t.isTemporary()) continue;
@@ -51,6 +56,13 @@ public class TowerManager {
 
     public boolean canPlace(TowerType type, Vec p) { return placementProblem(type, p) == null; }
 
+    /** True if a copy of this hero is currently placed (only one of each hero may exist). */
+    public boolean heroPlaced(TowerType type) {
+        for (Tower t : towers) if (t.getType() == type && !t.isTemporary()) return true;
+        for (Tower t : pending) if (t.getType() == type && !t.isTemporary()) return true;
+        return false;
+    }
+
     /** Buys and places a tower. Returns the tower, or null if placement is invalid. */
     public Tower place(TowerType type, Vec p) {
         if (!canPlace(type, p)) return null;
@@ -60,6 +72,7 @@ public class TowerManager {
         towers.add(t);
         game.getEvents().add(VisualEvent.ability(p, def.radius * 2, type.primaryRgb));
         recomputeAuras();
+        t.getBehavior().onPlaced(game, t);
         return t;
     }
 
@@ -80,7 +93,7 @@ public class TowerManager {
         if (!canUpgrade(t)) return false;
         int cost = t.nextUpgrade().cost;
         if (!game.spendCash(cost)) return false;
-        t.applyUpgrade();
+        t.applyUpgrade(game);
         t.clearSurveilled();
         game.getEvents().add(VisualEvent.ability(t.getPosition(), 50, t.getType().secondaryRgb));
         recomputeAuras();
@@ -93,6 +106,8 @@ public class TowerManager {
         int refund = Shop.sellValue(t);
         t.markRemoved();
         towers.remove(t);
+        t.getBehavior().onRemoved(game, t);
+        game.getEffects().removeOwnedBy(t);
         game.addCash(refund, t.getPosition());
         game.getEvents().add(VisualEvent.text(t.getPosition(), "+$" + refund, 0xffd166));
         recomputeAuras();
@@ -115,24 +130,23 @@ public class TowerManager {
     // Auras
     // ------------------------------------------------------------------
 
-    /** Recomputes every aura-granted bonus from scratch. */
+    /**
+     * Recomputes every aura-granted bonus from scratch. Each tower's behaviour applies its aura to every other
+     * tower ({@link lindefense.tower.behavior.TowerBehavior#auraContribution}); buffs from the same source tower
+     * type never stack. A Perplexity with {@code revealAllCamo} (U1+) grants detection to every tower.
+     */
     public void recomputeAuras() {
-        for (Tower t : towers) t.resetAuraBonuses();
+        boolean revealAll = false;
+        for (Tower t : towers) {
+            t.resetAuraBonuses();
+            if (t.getStats().has("revealAllCamo")) revealAll = true;
+        }
         for (Tower src : towers) {
-            TowerStats s = src.getStats();
-            if (s.auraRange <= 0) continue;
             for (Tower dst : towers) {
-                if (dst == src) continue;
-                if (dst.getPosition().dist(src.getPosition()) > s.auraRange) continue;
-                double rate = s.auraRate;
-                if (dst.getType().faction == Faction.MILITARY && s.auraRateMilitary > rate) rate = s.auraRateMilitary;
-                if (rate > 0) dst.addAuraRate(rate);
-                if (s.auraDamage > 0) dst.addAuraDamage(s.auraDamage);
-                if (s.auraRangeBonus > 0) dst.addAuraRange(s.auraRangeBonus);
-                if (s.auraDetection) dst.grantDetection();
-                if (s.auraSurveillanceImmunity) dst.grantSurveillanceImmunity();
+                if (dst != src) src.getBehavior().auraContribution(game, src, dst);
             }
         }
+        if (revealAll) for (Tower t : towers) t.grantDetection();
     }
 
     // ------------------------------------------------------------------
@@ -146,18 +160,8 @@ public class TowerManager {
             Tower t = towers.get(i);
             boolean wantsAttack = t.tickTimers(game, dt);
             if (!t.isAlive()) continue;
-            TowerStats s = t.getStats();
-            if (s.auraEnemySlow > 0) {
-                double r = t.effectiveRange(game);
-                for (Enemy e : game.getEnemyManager().getEnemies()) {
-                    if (e.getPosition().dist(t.getPosition()) <= r + e.getRadius()) {
-                        e.applyStatus(StatusEffect.Kind.SLOW, s.auraEnemySlow, 0.2);
-                    }
-                }
-            }
-            if (t.tickSummon(dt) && !t.isSurveilled()) {
-                summonSprites(t, s.summonCount, s.summonLifetime);
-            }
+            t.getBehavior().update(game, t, dt);
+            if (tickCounter % FIELD_REFRESH_TICKS == 0) applyEnemyField(t);
             if (wantsAttack) {
                 if (!game.getCombat().attack(t)) t.idle();
             }
@@ -168,15 +172,20 @@ public class TowerManager {
         if (!pending.isEmpty()) { towers.addAll(pending); pending.clear(); }
     }
 
-    /** Summons DALL-E sprites around the owner at random offsets inside its range. */
-    public void summonSprites(Tower owner, int count, double lifetime) {
-        for (int i = 0; i < count; i++) {
-            double ang = game.getRng().range(0, Math.PI * 2);
-            double dist = game.getRng().range(30, Math.max(40, owner.getStats().range * 0.6));
-            Vec p = owner.getPosition().add(new Vec(Math.cos(ang) * dist, Math.sin(ang) * dist));
-            p = new Vec(Math.max(10, Math.min(lindefense.map.GameMap.WIDTH - 10, p.x)),
-                        Math.max(10, Math.min(lindefense.map.GameMap.HEIGHT - 10, p.y)));
-            addTemporary(TowerType.DALLE_SPRITE, 0, p, lifetime, owner);
+    /** Slow / mark applied to enemies inside a tower's field (Sora, Brad U1, Perplexity U2). */
+    private void applyEnemyField(Tower t) {
+        TowerStats s = t.getStats();
+        if (s.auraEnemySlow <= 0 && s.fieldMarkFlat <= 0 && s.fieldMarkPct <= 0) return;
+        double r = s.fieldRadius > 0 ? s.fieldRadius : t.effectiveRange(game);
+        List<Enemy> pool = game.getEnemyManager().getGrid().near(t.getPosition().x, t.getPosition().y, r, near);
+        for (int i = 0, n = pool.size(); i < n; i++) {
+            Enemy e = pool.get(i);
+            if (!e.isAlive() || e.isStored()) continue;
+            if (e.isBoss() && !s.fieldAffectsBosses) continue;
+            if (e.getPosition().exceedsDist(t.getPosition(), r + e.getRadius())) continue;
+            if (s.auraEnemySlow > 0) e.applyStatus(StatusEffect.Kind.SLOW, s.auraEnemySlow, FIELD_STATUS_TIME);
+            if (s.fieldMarkFlat > 0) e.applyStatus(StatusEffect.Kind.MARKED_FLAT, s.fieldMarkFlat, FIELD_STATUS_TIME);
+            if (s.fieldMarkPct > 0) e.applyStatus(StatusEffect.Kind.MARKED, s.fieldMarkPct, FIELD_STATUS_TIME);
         }
     }
 }

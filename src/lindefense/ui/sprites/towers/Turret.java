@@ -3,6 +3,7 @@ package lindefense.ui.sprites.towers;
 import acm.graphics.GCompound;
 import acm.graphics.GPolygon;
 import java.awt.Color;
+import lindefense.ui.sprites.Thick;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -53,7 +54,7 @@ public final class Turret extends GCompound {
             v[2 * i] = cx + Math.cos(a) * rx;
             v[2 * i + 1] = cy + Math.sin(a) * ry;
         }
-        return plain(v, Art.alpha(Color.WHITE, 120));
+        return Flat.detail(plain(v, Art.alpha(Color.WHITE, 120)), Thick.DETAIL_DECOR);
     }
 
     /**

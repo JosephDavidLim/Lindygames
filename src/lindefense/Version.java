@@ -2,17 +2,17 @@ package lindefense;
 
 /**
  * Single source of truth for the game's release version, shown on the title screen.
- * Bump {@link #NUMBER} together with each "alpha vX.Y" release commit.
+ * Bump {@link #NUMBER} together with each release commit ("alpha vX.Y", then "beta X.Y").
  */
 public final class Version {
     private Version() { }
 
-    /** Release number, matching the "alpha vX.Y" commit names. */
-    public static final String NUMBER = "0.5";
+    /** Release number, matching the release commit names. */
+    public static final String NUMBER = "1.0";
 
     /** Stage of development. */
-    public static final String STAGE = "ALPHA";
+    public static final String STAGE = "BETA";
 
-    /** Label shown on the title screen, e.g. "v0.5 ALPHA". */
+    /** Label shown on the title screen, e.g. "v1.0 BETA". */
     public static final String LABEL = "v" + NUMBER + " " + STAGE;
 }

@@ -4,7 +4,6 @@ import acm.graphics.GCompound;
 import acm.graphics.GLabel;
 import acm.graphics.GOval;
 import acm.graphics.GPolygon;
-import acm.graphics.GRect;
 import java.awt.Color;
 import lindefense.enemy.Enemy;
 import lindefense.sim.Game;
@@ -18,11 +17,11 @@ import lindefense.ui.sprites.towers.TowerArtFactory;
 /**
  * Visual model of a placed tower. The cartoon body is delegated to a
  * {@link TowerArt} from {@code lindefense.ui.sprites.towers} (one class per
- * tower type, five tiers each) and is rebuilt only when the tier changes.
+ * tower type, four game tiers mapped to art stages 0, 2, 3, 4) and is rebuilt only when the tier changes.
  * This class owns the functional overlays: turret aiming at the last target,
- * firing recoil and muzzle flash, the ability-ready ring and cooldown bar,
+ * firing recoil and muzzle flash, the radial ability cooldown ring (with a ready pulse),
  * the Palantir surveillance ring with its TARGETED / SURVEILLED label, the hero
- * badge and the four tier pips (no always-on name label; WorldView draws a
+ * badge and the three tier pips (no always-on name label; WorldView draws a
  * hover / selection nameplate). Between rebuilds only object state is mutated.
  */
 @SuppressWarnings({ "serial", "this-escape" })
@@ -36,8 +35,7 @@ public final class TowerSprite extends GCompound {
     private int builtTier = -1;
     private TowerArt art;
     private double aimAngle = TowerArt.IDLE_ANGLE;
-    private GOval abilityRing;
-    private GRect cdBack, cdBar;
+    private RadialCooldown cdRing;
     private GOval surveilRing;
     private GLabel mark;
     private double pulse;
@@ -60,16 +58,16 @@ public final class TowerSprite extends GCompound {
         double r = tower.getRadius();
         boolean temp = tower.isTemporary();
 
-        art = TowerArtFactory.create(type, builtTier, r);
+        art = TowerArtFactory.create(type, TowerArtFactory.artStage(builtTier), r);
         art.aim(aimAngle);
         add(art);
 
-        // tier pips (4) under the plate
+        // tier pips (3, one per upgrade) under the plate
         if (!temp) {
-            double pw = r * 0.34, ph = r * 0.18, gap = r * 0.1;
-            double x0 = -(4 * pw + 3 * gap) / 2;
-            for (int i = 0; i < 4; i++) {
-                Color fill = i < builtTier ? (builtTier >= 4 ? Art.GOLD : Ui.GREEN) : PIP_OFF;
+            double pw = r * 0.4, ph = r * 0.18, gap = r * 0.12;
+            double x0 = -(3 * pw + 2 * gap) / 2;
+            for (int i = 0; i < 3; i++) {
+                Color fill = i < builtTier ? (builtTier >= 3 ? Art.GOLD : Ui.GREEN) : PIP_OFF;
                 add(Ui.rect(x0 + i * (pw + gap), r * 1.22, pw, ph, fill, Art.INK));
             }
         }
@@ -84,14 +82,10 @@ public final class TowerSprite extends GCompound {
             star.setFilled(true); star.setFillColor(Art.GOLD); star.setColor(Art.GOLD_DARK);
             add(star);
         }
-        // ability-ready ring + cooldown bar
-        abilityRing = Ui.oval(-r * 1.3, -r * 1.3, r * 2.6, r * 2.6, null, Ui.withAlpha(Ui.GOLD, 220));
-        abilityRing.setVisible(false);
-        add(abilityRing);
-        cdBack = Ui.rect(-r, -r * 1.6, r * 2, 4, Ui.c(0x0b0e14, 200), null);
-        cdBar = Ui.rect(-r, -r * 1.6, r * 2, 4, Ui.GOLD, null);
-        cdBack.setVisible(false); cdBar.setVisible(false);
-        add(cdBack); add(cdBar);
+        // radial ability cooldown (fills clockwise; pulses when ready)
+        cdRing = new RadialCooldown(r * 1.32, 3);
+        cdRing.setVisible(false);
+        add(cdRing);
         // surveillance ring + mark
         surveilRing = Ui.oval(-r * 1.7, -r * 1.7, r * 3.4, r * 3.4, Ui.c(0xff2020, 50), Ui.c(0xff4040));
         surveilRing.setVisible(false);
@@ -102,7 +96,10 @@ public final class TowerSprite extends GCompound {
         // No always-on name label: WorldView shows a hover / selection nameplate instead.
     }
 
-    private static int clampTier(int t) { return Math.max(0, Math.min(4, t)); }
+    private static int clampTier(int t) { return Math.max(0, Math.min(3, t)); }
+
+    /** Sets visibility only when it changes (every ACM setter walks up to the canvas to request a repaint). */
+    private static void show(acm.graphics.GObject o, boolean visible) { if (o.isVisible() != visible) o.setVisible(visible); }
 
     /**
      * Per-frame update.
@@ -139,17 +136,13 @@ public final class TowerSprite extends GCompound {
         art.setFiring(sinceFire);
         art.animate(now, dt);
 
-        boolean ready = tower.getAbility() != null && tower.isAbilityReady() && !tower.isTemporary();
-        abilityRing.setVisible(ready && (pulse % 1.0) < 0.6);
-        boolean cooling = tower.getAbility() != null && !tower.isTemporary() && tower.getAbilityCooldownRemaining() > 0;
-        cdBack.setVisible(cooling);
-        cdBar.setVisible(cooling);
-        if (cooling) {
-            double frac = 1 - tower.getAbilityCooldownFraction();
-            cdBar.setSize(Math.max(0.5, r * 2 * frac), 4);
+        boolean has = tower.getAbility() != null && !tower.isTemporary();
+        show(cdRing, has);
+        if (has) {
+            cdRing.set(1 - tower.getAbilityCooldownFraction(), tower.isAbilityReady(), tower.isSurveilled(), Ui.c(tower.getType().primaryRgb).brighter(), pulse);
         }
         boolean surveilled = tower.isSurveilled();
-        surveilRing.setVisible(surveilled || telegraphed);
+        show(surveilRing, surveilled || telegraphed);
         if (surveilled) surveilRing.setFillColor(Ui.c(0xff2020, (int) (60 + 50 * Math.sin(pulse * 8))));
         else if (telegraphed) surveilRing.setFillColor(Ui.c(0xff8000, (int) (40 + 60 * Math.abs(Math.sin(pulse * 10)))));
         boolean showMark = telegraphed || surveilled;

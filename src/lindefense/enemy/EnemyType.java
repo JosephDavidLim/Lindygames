@@ -1,7 +1,5 @@
 package lindefense.enemy;
 
-import lindefense.combat.DamageType;
-
 /**
  * The enemy roster and all per-type baseline numbers (centralised so values can be
  * tuned without touching game logic). HP values are the "layer" counts from the
@@ -41,26 +39,26 @@ public enum EnemyType {
     QUICK_PARTITION("Quick Partition", 3, 1.6, 4, 3, 12, Mechanic.NONE,
         "One side of a Quick Sort partition."),
     HEAP_SORT("Heap Sort", 8, 1.2, 12, 5, 19, Mechanic.HEAP_SHIELD,
-        "Armoured tree. Immune to Physical damage and shields enemies behind it (50% damage)."),
+        "Armoured tree. Lead-type (Sharp cannot hurt it) and shields enemies behind it (50% damage)."),
     COUNTING_SORT("Counting Sort", 1, 1.3, 6, 4, 16, Mechanic.NONE,
         "A thin outer layer holding four counters. Releases 4 Primitive Variables."),
     RADIX_SORT("Radix Sort", 8, 1.5, 14, 6, 18, Mechanic.RADIX_PHASES,
-        "Digit armour changes every two layers: plain, Physical-immune, Energy/Magic-resistant, Explosive-immune."),
+        "Digit armour: its outer two layers are plain; once it drops to 6 layers or fewer its armoured phases are Lead-type."),
     BUCKET_SORT("Bucket Sort", 6, 1.4, 10, 5, 19, Mechanic.BUCKET_STORE,
         "Stores up to 6 nearby weaker enemies and releases them when destroyed."),
     TIMSORT("TimSort", 10, 1.6, 16, 8, 19, Mechanic.NONE,
         "Fast hybrid. Splits into a Merge Sort and an Insertion Sort."),
 
     // ---------------- Corporate bosses ----------------
-    BELLARMINE_COLLEGE_PREP("Bellarmine College Prep", 2000, 0.7, 300, 30, 34, Mechanic.NONE,
+    BELLARMINE_COLLEGE_PREP("Bellarmine College Prep", 1500, 0.7, 300, 30, 34, Mechanic.NONE,
         "MOAB-class. Heavy armour (25%), slow. Releases 4 Quick Sorts."),
-    SW_RESOURCE_CONSULTANT("SW Resource Consultant", 9000, 0.5, 800, 60, 42, Mechanic.NONE,
+    SW_RESOURCE_CONSULTANT("SW Resource Consultant", 7500, 0.5, 800, 60, 42, Mechanic.NONE,
         "BFB-class. Armour 40%; hits below 3 damage are halved. Releases 3 Bellarmine College Preps."),
-    THREE_COM("3Com", 30000, 0.4, 2000, 100, 52, Mechanic.NONE,
+    THREE_COM("3Com", 8000, 0.4, 2000, 100, 52, Mechanic.NONE,
         "ZOMG-class. Massive HP, armour 30%. Releases 3 SW Resource Consultants."),
-    LOCKHEED_MARTIN("Lockheed Martin", 3500, 2.6, 700, 50, 30, Mechanic.NONE,
-        "DDT-class. Camo, very fast, Physical-immune, Explosive-resistant, armour 40%. Releases 4 camo Quick Sorts."),
-    PALANTIR("Palantir", 200000, 0.28, 10000, 100, 64, Mechanic.PALANTIR,
+    LOCKHEED_MARTIN("Lockheed Martin", 1000, 2.6, 700, 50, 30, Mechanic.NONE,
+        "DDT-class. Camo, very fast, Lead-type, armour 40%. Releases 4 camo Quick Sorts."),
+    PALANTIR("Palantir", 50000, 0.28, 10000, 100, 64, Mechanic.PALANTIR,
         "BAD-class final boss. Three defensive phases and Predictive Surveillance.");
 
     public final String displayName;
@@ -77,8 +75,8 @@ public enum EnemyType {
     private BossClass bossClass;
     private double armor;
     private int weakHitThreshold;
-    private boolean physicalImmune;
-    private double explosiveMultiplier = 1.0;
+    private boolean leadBody;
+    private boolean ceramicBody;
     private boolean innateCamo;
 
     EnemyType(String displayName, int baseHp, double speed, int reward, int lives, double radius,
@@ -102,7 +100,10 @@ public enum EnemyType {
         TIMSORT.childTypes = new EnemyType[] { MERGE_SORT, INSERTION_SORT };
         TIMSORT.childCounts = new int[] { 1, 1 };
 
-        HEAP_SORT.physicalImmune = true;
+        HEAP_SORT.leadBody = true;
+        MERGE_SORT.ceramicBody = true;
+        QUICK_SORT.ceramicBody = true;
+        TIMSORT.ceramicBody = true;
 
         BELLARMINE_COLLEGE_PREP.boss(BossClass.MOAB, 0.25, 0);
         BELLARMINE_COLLEGE_PREP.children(QUICK_SORT, 4);
@@ -112,8 +113,7 @@ public enum EnemyType {
         THREE_COM.children(SW_RESOURCE_CONSULTANT, 3);
         LOCKHEED_MARTIN.boss(BossClass.DDT, 0.40, 0);
         LOCKHEED_MARTIN.children(QUICK_SORT, 4);
-        LOCKHEED_MARTIN.physicalImmune = true;
-        LOCKHEED_MARTIN.explosiveMultiplier = 0.5;
+        LOCKHEED_MARTIN.leadBody = true;
         LOCKHEED_MARTIN.innateCamo = true;
         PALANTIR.boss(BossClass.BAD, 0.60, 0); // armour is phase-driven, see Boss
     }
@@ -134,7 +134,19 @@ public enum EnemyType {
     public double getArmor() { return armor; }
     /** Hits with raw damage below this are halved (0 = disabled). */
     public int getWeakHitThreshold() { return weakHitThreshold; }
-    public boolean isPhysicalImmune() { return physicalImmune; }
+    /**
+     * Lead-type for the whole body (Heap Sort, Lockheed Martin). Radix Sort is Lead-type only in its armoured
+     * phases; see {@link Enemy#isLeadType()}.
+     */
+    public boolean isLeadBody() { return leadBody; }
+    /**
+     * Ceramic-type outer layer: the body that releases children when destroyed and is itself a sorting
+     * layer (Merge Sort, Quick Sort, TimSort). Its children (Merge Run, Quick Partition) are not Ceramic.
+     */
+    public boolean isCeramicBody() { return ceramicBody; }
+    /** True for every sorting-algorithm enemy including split-children (Merge Run, Quick Partition). */
+    public boolean isSortingAlgorithm() { return ordinal() >= BUBBLE_SORT.ordinal() && ordinal() <= TIMSORT.ordinal(); }
+    public boolean isLinkedList() { return this == SINGLY_LINKED_LIST || this == DOUBLY_LINKED_LIST; }
     public boolean hasInnateCamo() { return innateCamo; }
     public EnemyType[] getChildTypes() { return childTypes; }
     public int[] getChildCounts() { return childCounts; }
@@ -145,14 +157,6 @@ public enum EnemyType {
         int n = 0;
         for (int c : childCounts) n += c;
         return n;
-    }
-
-    /** Baseline damage multiplier for a damage type (before Radix phases / armour). */
-    public double resistance(DamageType type) {
-        if (type == DamageType.TRUE) return 1.0;
-        if (type == DamageType.PHYSICAL && physicalImmune) return 0.0;
-        if (type == DamageType.EXPLOSIVE) return explosiveMultiplier;
-        return 1.0;
     }
 
     /** "Complex" enemies are the targets of DeepSeek-style bonuses. */

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import lindefense.tower.Faction;
 import lindefense.tower.TowerType;
+import lindefense.ui.sprites.Thick;
 
 /**
  * Base class for every tower's cartoon body. A {@code TowerArt} is built once
@@ -91,13 +92,13 @@ public abstract class TowerArt extends GCompound {
     // ------------------------------------------------------------ construction helpers
 
     private void buildAura() {
-        auraGlow = Art.glow(this, 0, 0, r * 1.85, Art.GOLD, 40);
-        Art.glow(this, 0, 0, r * 1.5, pri, 50);
-        GPolygon ring = Art.rawPoly(Art.gearRing(0, 0, r * 1.8, r * 1.55, r * 1.4, 12), Art.alpha(Art.GOLD, 150), Art.alpha(Art.GOLD_LIGHT, 200));
+        auraGlow = Flat.detail(Art.glow(this, 0, 0, r * 1.85, Art.GOLD, 40), Thick.DETAIL_DECOR);
+        Flat.detail(Art.glow(this, 0, 0, r * 1.5, pri, 50), Thick.DETAIL_DECOR);
+        GPolygon ring = Flat.detail(Art.rawPoly(Art.gearRing(0, 0, r * 1.8, r * 1.55, r * 1.4, 12), Art.alpha(Art.GOLD, 150), Art.alpha(Art.GOLD_LIGHT, 200)), Thick.DETAIL_DECOR);
         add(ring);
         auraRing = ring;
         spinner(ring, 25);
-        GPolygon ring2 = Art.rawPoly(Art.ring(0, 0, r * 1.35, r * 1.25, 24), Art.alpha(Color.WHITE, 90), Art.alpha(Color.WHITE, 0));
+        GPolygon ring2 = Flat.detail(Art.rawPoly(Art.ring(0, 0, r * 1.35, r * 1.25, 24), Art.alpha(Color.WHITE, 90), Art.alpha(Color.WHITE, 0)), Thick.DETAIL_DECOR);
         add(ring2);
         spinner(ring2, -40);
     }
@@ -196,7 +197,7 @@ public abstract class TowerArt extends GCompound {
 
     /** Adds a pulsing glow. */
     protected GOval pulsingGlow(double cx, double cy, double rad, Color c, int base, int amp, double hz) {
-        GOval o = Art.glow(this, cx, cy, rad, c, base);
+        GOval o = Flat.detail(Art.glow(this, cx, cy, rad, c, base), Thick.DETAIL_DECOR);
         pulser(o, c, base, amp, hz);
         return o;
     }
@@ -207,7 +208,7 @@ public abstract class TowerArt extends GCompound {
 
     /** Adds an expanding, fading ring that repeats every {@code period} seconds (pulse / aura attackers). */
     protected void pulseWave(Color c, double period) {
-        wave = new GOval(-r, -r, 2 * r, 2 * r);
+        wave = new Flat.Oval(-r, -r, 2 * r, 2 * r);
         wave.setFilled(false);
         wave.setColor(Art.alpha(c, 150));
         add(wave);
@@ -225,14 +226,14 @@ public abstract class TowerArt extends GCompound {
     protected GRect bodyBox(double x, double y, double w, double h, Color fill) { return Art.bodyBox(this, x, y, w, h, fill); }
     protected GOval gloss(double cx, double cy, double rx, double ry) { return Art.gloss(this, cx, cy, rx, ry); }
     protected GPolygon sparkle(double cx, double cy, double s) { return Art.sparkle(this, cx, cy, s); }
-    protected GOval glow(double cx, double cy, double rad, Color c, int a) { return Art.glow(this, cx, cy, rad, c, a); }
+    protected GOval glow(double cx, double cy, double rad, Color c, int a) { return Flat.detail(Art.glow(this, cx, cy, rad, c, a), Thick.DETAIL_DECOR); }
 
     /** A cartoon robot eye: white sclera, coloured iris, pupil and catch-light. */
     protected void eye(double cx, double cy, double rad, Color iris) {
         disc(cx, cy, rad, Color.WHITE);
         Art.plain(this, Art.circle(cx + rad * 0.1, cy + rad * 0.1, rad * 0.6, 12), iris);
         Art.plain(this, Art.circle(cx + rad * 0.15, cy + rad * 0.15, rad * 0.3, 8), Art.INK);
-        Art.plain(this, Art.circle(cx - rad * 0.25, cy - rad * 0.3, rad * 0.22, 8), Color.WHITE);
+        Flat.detail(Art.plain(this, Art.circle(cx - rad * 0.25, cy - rad * 0.3, rad * 0.22, 8), Color.WHITE), Thick.DETAIL_DECOR);
     }
 
     /** A glowing visor slit. */

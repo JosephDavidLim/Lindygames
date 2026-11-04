@@ -3,9 +3,7 @@ package lindefense.enemy;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import lindefense.combat.VisualEvent;
 import lindefense.map.Path;
 import lindefense.sim.Game;
@@ -33,12 +31,27 @@ import lindefense.tower.Tower;
  *   <li>Rewards: each entity pays its own reward exactly once, when its own body is destroyed. Leaks pay nothing.
  *       Rewards are multiplied by {@link lindefense.wave.WaveData#rewardScale(int)}.</li>
  * </ul>
+ *
+ * <h3>Performance</h3>
+ * The live list is an {@link EnemyList} with a spatial {@link EnemyGrid} over it ({@link #getGrid()}), used by every
+ * proximity query. The neighbour mechanics above work on per-route lists sorted by distance (rebuilt once per tick
+ * into reused arrays); while no mechanic has moved an enemy since that sort, each mechanic looks only at the slice of
+ * its route within its reach (binary search) instead of the whole route, visiting the same enemies in the same order.
  */
 public class EnemyManager {
     private final Game game;
-    private final List<Enemy> enemies = new ArrayList<>();
+    private static final Comparator<Enemy> BY_DISTANCE = Comparator.comparingDouble(Enemy::getDistance);
+    private static final List<Enemy> NO_ENEMIES = java.util.Collections.emptyList();
+
+    private final EnemyList enemies = new EnemyList();
+    private final EnemyGrid grid = new EnemyGrid(enemies);
     private final List<Enemy> pending = new ArrayList<>();
-    private final Map<Path, List<Enemy>> byRoute = new HashMap<>();
+    /** Per-route enemy lists sorted by distance: routeKeys[i] is the route (by identity) of routeLists[i]. */
+    private final List<Path> routeKeys = new ArrayList<>(4);
+    private final List<ArrayList<Enemy>> routeLists = new ArrayList<>(4);
+    /** True while every route list is still sorted by the enemies' current distances (no mechanic moved anyone yet). */
+    private boolean routesSorted;
+    private final List<Enemy> scratch = new ArrayList<>();
     private int totalKilled;
     private int totalLeaked;
     private int totalSpawned;
@@ -47,6 +60,8 @@ public class EnemyManager {
 
     /** Active (on-track, alive) enemies. Do not modify. */
     public List<Enemy> getEnemies() { return enemies; }
+    /** Spatial grid over {@link #getEnemies()} for proximity queries (always current; see {@link EnemyGrid}). */
+    public EnemyGrid getGrid() { return grid; }
     public int getTotalKilled() { return totalKilled; }
     public int getTotalLeaked() { return totalLeaked; }
     public int getTotalSpawned() { return totalSpawned; }
@@ -76,7 +91,7 @@ public class EnemyManager {
         return e;
     }
 
-    public void clear() { enemies.clear(); pending.clear(); byRoute.clear(); }
+    public void clear() { enemies.clear(); pending.clear(); for (ArrayList<Enemy> l : routeLists) l.clear(); }
 
     // ------------------------------------------------------------------
 
@@ -87,7 +102,11 @@ public class EnemyManager {
         for (int i = 0; i < enemies.size(); i++) {
             Enemy e = enemies.get(i);
             double dot = e.tickStatuses(dt);
-            if (dot > 0) e.takeDamage(dot, now);
+            if (dot > 0) {
+                double dealt = e.takeDamage(dot, now);
+                Object ds = e.getDotSource();
+                if (ds instanceof Tower) { e.setLastHitBy(ds); ((Tower) ds).addDamageDealt(dealt); }
+            }
             if (e instanceof Boss) ((Boss) e).updateBoss(game, dt);
         }
         // 2. movement + leaks
@@ -101,6 +120,11 @@ public class EnemyManager {
             } else {
                 game.getMap().onEnemyMoved(game, e);
             }
+        }
+        // 2b. reversed enemies (Cohere Command Override) damage whatever they touch
+        for (int i = 0; i < enemies.size(); i++) {
+            Enemy e = enemies.get(i);
+            if (e.isAlive() && e.isReversed() && !e.isStored()) reverseContact(e, dt);
         }
         // 3. neighbour-based mechanics
         rebuildRouteIndex();
@@ -126,29 +150,80 @@ public class EnemyManager {
         flushPending();
     }
 
+    /** Contact damage of a reversed enemy: its dps (TRUE damage, credited to the override's source) to every other enemy touching it. */
+    private void reverseContact(Enemy r, double dt) {
+        double dmg = r.getReverseDps() * dt;
+        if (dmg <= 0) return;
+        Object src = r.getReverseSource();
+        List<Enemy> near = grid.near(r.getPosition().x, r.getPosition().y, r.getRadius(), scratch);
+        for (int j = 0; j < near.size(); j++) {
+            Enemy o = near.get(j);
+            if (o == r || !o.isAlive() || o.isStored()) continue;
+            if (o.getPosition().distSq(r.getPosition()) > (r.getRadius() + o.getRadius()) * (r.getRadius() + o.getRadius())) continue;
+            double dealt = o.takeDamage(dmg, game.getTime());
+            if (src instanceof Tower) { o.setLastHitBy(src); ((Tower) src).addDamageDealt(dealt); }
+        }
+    }
+
     private void flushPending() {
         if (!pending.isEmpty()) { enemies.addAll(pending); pending.clear(); }
     }
 
     private void rebuildRouteIndex() {
-        for (List<Enemy> l : byRoute.values()) l.clear();
-        for (Enemy e : enemies) {
+        for (int i = 0; i < routeLists.size(); i++) routeLists.get(i).clear();
+        for (int i = 0, n = enemies.size(); i < n; i++) {
+            Enemy e = enemies.get(i);
             if (!e.isAlive() || e.isStored()) continue;
-            byRoute.computeIfAbsent(e.getRoute(), k -> new ArrayList<>()).add(e);
+            routeList(e.getRoute(), true).add(e);
         }
-        for (List<Enemy> l : byRoute.values()) l.sort(Comparator.comparingDouble(Enemy::getDistance));
+        for (int i = 0; i < routeLists.size(); i++) routeLists.get(i).sort(BY_DISTANCE);
+        routesSorted = true;
+    }
+
+    /** The list for a route (matched by identity, as the HashMap key was); created on demand if {@code create}. */
+    private ArrayList<Enemy> routeList(Path route, boolean create) {
+        for (int i = 0; i < routeKeys.size(); i++) if (routeKeys.get(i) == route) return routeLists.get(i);
+        if (!create) return null;
+        ArrayList<Enemy> l = new ArrayList<>();
+        routeKeys.add(route);
+        routeLists.add(l);
+        return l;
     }
 
     private List<Enemy> routeMates(Enemy e) {
-        List<Enemy> l = byRoute.get(e.getRoute());
-        return l == null ? new ArrayList<>() : l;
+        List<Enemy> l = routeList(e.getRoute(), false);
+        return l == null ? NO_ENEMIES : l;
+    }
+
+    /**
+     * Index of the first route mate a mechanic of {@code e} must look at when its reach behind {@code e} is
+     * {@code behind} px: binary search on the distance-sorted route list (with 1 px of slack, the exact test is still
+     * applied by the caller), or 0 (scan everything, as before) once any mechanic has moved an enemy this tick.
+     */
+    private int windowStart(List<Enemy> mates, double fromDistance) {
+        if (!routesSorted) return 0;
+        int lo = 0, hi = mates.size();
+        double key = fromDistance - 1;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (mates.get(mid).getDistance() < key) lo = mid + 1; else hi = mid;
+        }
+        return lo;
+    }
+
+    /** True if iteration may stop at {@code o}: the list is still sorted and {@code o} is beyond {@code toDistance} (+1 px slack). */
+    private boolean pastWindow(Enemy o, double toDistance) {
+        return routesSorted && o.getDistance() > toDistance + 1;
     }
 
     private void runMechanic(Enemy e, double dt) {
         Mechanic m = e.getType().mechanic;
         if (m == Mechanic.HEAP_SHIELD) {
             if (e.isDisrupted()) return;
-            for (Enemy o : routeMates(e)) {
+            List<Enemy> mates = routeMates(e);
+            for (int i = windowStart(mates, e.getDistance() - 90); i < mates.size(); i++) {
+                Enemy o = mates.get(i);
+                if (pastWindow(o, e.getDistance())) break;
                 if (o == e) continue;
                 double gap = e.getDistance() - o.getDistance();
                 if (gap > 0 && gap <= 90) o.setShieldedTick(game.getTick());
@@ -166,6 +241,7 @@ public class EnemyManager {
             case BUBBLE_SWAP: {
                 Enemy ahead = nearestAhead(e, 45);
                 if (ahead != null) {
+                    routesSorted = false;
                     double d = ahead.getDistance();
                     ahead.setDistance(e.getDistance());
                     e.setDistance(d);
@@ -175,21 +251,25 @@ public class EnemyManager {
             }
             case SELECTION_FRONT: {
                 double best = -1;
-                for (Enemy o : routeMates(e)) {
+                List<Enemy> mates = routeMates(e);
+                for (int i = windowStart(mates, e.getDistance()); i < mates.size(); i++) {
+                    Enemy o = mates.get(i);
+                    if (pastWindow(o, e.getDistance() + 140)) break;
                     double gap = o.getDistance() - e.getDistance();
                     if (o != e && gap > 0 && gap <= 140 && o.getDistance() > best) best = o.getDistance();
                 }
-                if (best >= 0) { e.setDistance(best + 6); game.getEvents().add(VisualEvent.teleport(e.getPosition())); }
+                if (best >= 0) { routesSorted = false; e.setDistance(best + 6); game.getEvents().add(VisualEvent.teleport(e.getPosition())); }
                 break;
             }
             case INSERTION_LEAPFROG: {
                 Enemy ahead = nearestAhead(e, 70);
-                if (ahead != null) { e.setDistance(ahead.getDistance() + 6); game.getEvents().add(VisualEvent.split(e.getPosition(), 10, 0xffe066)); }
+                if (ahead != null) { routesSorted = false; e.setDistance(ahead.getDistance() + 6); game.getEvents().add(VisualEvent.split(e.getPosition(), 10, 0xffe066)); }
                 break;
             }
             case SHELL_GAP_JUMP: {
                 double gap = e.currentShellGap();
                 Vec from = e.getPosition();
+                routesSorted = false;
                 e.shiftDistance(gap);
                 e.setShellJumpIndex(e.getShellJumpIndex() + 1);
                 game.getEvents().add(VisualEvent.chain(from, e.getPosition(), 0xc2b280));
@@ -197,7 +277,10 @@ public class EnemyManager {
             }
             case BUCKET_STORE: {
                 if (e.getStoredEnemies().size() >= 6) break;
-                for (Enemy o : routeMates(e)) {
+                List<Enemy> mates = routeMates(e);
+                for (int i = windowStart(mates, e.getDistance() - 30); i < mates.size(); i++) {
+                    Enemy o = mates.get(i);
+                    if (pastWindow(o, e.getDistance() + 30)) break;
                     if (o == e || !o.isAlive() || o.isStored() || o.isBoss()) continue;
                     if (o.getType().baseHp > 5 || o.getType().mechanic == Mechanic.BUCKET_STORE) continue;
                     if (Math.abs(o.getDistance() - e.getDistance()) <= 30) {
@@ -216,7 +299,10 @@ public class EnemyManager {
     private Enemy nearestAhead(Enemy e, double maxGap) {
         Enemy best = null;
         double bestGap = maxGap;
-        for (Enemy o : routeMates(e)) {
+        List<Enemy> mates = routeMates(e);
+        for (int i = windowStart(mates, e.getDistance()); i < mates.size(); i++) {
+            Enemy o = mates.get(i);
+            if (pastWindow(o, e.getDistance() + maxGap)) break;
             if (o == e) continue;
             double gap = o.getDistance() - e.getDistance();
             if (gap > 0 && gap <= bestGap) { bestGap = gap; best = o; }
@@ -236,15 +322,32 @@ public class EnemyManager {
     }
 
     /** Destroys the enemy's body: pays its reward and releases children / stored enemies. */
-    public void kill(Enemy e) {
+    public void kill(Enemy e) { destroy(e, true); }
+
+    /**
+     * Instantly destroys an enemy WITHOUT releasing children (DeepSeek Deep Reasoning Strike): the enemy's own
+     * reward is paid exactly once, stored bucket contents are released normally, and the kill is credited to
+     * {@code credit} (a Tower or null). Does nothing if already dead.
+     */
+    public void destroyWithoutChildren(Enemy e, Object credit) {
+        if (e == null || !e.isAlive()) return;
+        if (credit != null) e.setLastHitBy(credit);
+        destroy(e, false);
+    }
+
+    private void destroy(Enemy e, boolean children) {
         if (!e.isAlive()) return;
         e.markDead();
         totalKilled++;
         Object src = e.getLastHitBy();
-        if (src instanceof Tower) ((Tower) src).addKill();
         double reward = Math.round(e.getType().reward * game.getRewardScale());
-        if (reward > 0) game.addCash(reward, e.getPosition());
+        if (reward > 0) { game.addCash(reward, e.getPosition()); game.addPopValue(reward); }
         game.onEnemyKilled(e);
+        if (src instanceof Tower) {
+            Tower killer = (Tower) src;
+            killer.addKill();
+            killer.getBehavior().onKill(game, killer, e);
+        }
 
         EnemyType t = e.getType();
         if (t == EnemyType.PALANTIR) return; // victory sequence; no children
@@ -255,21 +358,24 @@ public class EnemyManager {
         int k = 0;
         EnemyType[] ct = t.getChildTypes();
         int[] cc = t.getChildCounts();
-        for (int i = 0; i < ct.length; i++) {
-            for (int j = 0; j < cc[i]; j++) {
-                double d = e.getDistance() - 6 * k++;
-                Enemy child = spawnScaled(ct[i], inherited, e.getRouteIndex(), Math.max(0, d), e.getHpScale(), e.getSpeedScale());
-                child.setDrifted(e.hasDrifted());
+        if (children) {
+            for (int i = 0; i < ct.length; i++) {
+                for (int j = 0; j < cc[i]; j++) {
+                    double d = e.getDistance() - 6 * k++;
+                    Enemy child = spawnScaled(ct[i], inherited, e.getRouteIndex(), Math.max(0, d), e.getHpScale(), e.getSpeedScale());
+                    child.setDrifted(e.hasDrifted());
+                }
             }
         }
-        if (ct.length > 0) game.getEvents().add(VisualEvent.split(e.getPosition(), e.getRadius() * 1.6, 0xffffff));
+        if (children && ct.length > 0) game.getEvents().add(VisualEvent.split(e.getPosition(), e.getRadius() * 1.6, 0xffffff));
         else game.getEvents().add(VisualEvent.death(e.getPosition(), e.getRadius(), 0xffffff));
         if (!e.getStoredEnemies().isEmpty()) {
             int i = 0;
             for (Enemy s : e.getStoredEnemies()) {
                 s.setStored(false);
                 s.teleportTo(e.getRoute(), e.getRouteIndex(), Math.max(0, e.getDistance() - 8 * i++));
-                pending.add(s);
+                // a carrier stored it this very tick and dies before the sweep removed it: it is still in the list
+                if (!enemies.contains(s)) pending.add(s);
             }
             e.getStoredEnemies().clear();
         }

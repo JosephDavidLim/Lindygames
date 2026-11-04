@@ -10,6 +10,7 @@ import java.util.List;
 import javax.imageio.ImageIO;
 import javax.swing.SwingUtilities;
 import lindefense.enemy.EnemyType;
+import lindefense.tower.Faction;
 import lindefense.sim.Game;
 import lindefense.sim.Vec;
 import lindefense.tower.Tower;
@@ -36,11 +37,12 @@ final class DemoDriver {
         this.out = new File(dir);
         out.mkdirs();
         // index -> time (seconds) of each scripted step
-        double[] times = new double[36];
+        double[] times = new double[41];
         double[][] sched = { { 0, 2.6 }, { 1, 2.8 }, { 2, 3.8 }, { 3, 4.0 }, { 4, 10.0 }, { 5, 11.5 }, { 6, 13.0 }, { 7, 13.5 }, { 8, 15.0 }, { 9, 15.5 },
-            { 10, 17.0 }, { 11, 19.5 }, { 12, 26.6 }, { 13, 10.2 }, { 14, 10.4 }, { 15, 0.5 }, { 16, 1.6 }, { 17, 1.9 }, { 18, 2.2 }, { 19, 2.5 },
+            { 10, 17.0 }, { 11, 19.5 }, { 12, 28.0 }, { 13, 10.2 }, { 14, 10.4 }, { 15, 0.5 }, { 16, 1.6 }, { 17, 1.9 }, { 18, 2.2 }, { 19, 2.5 },
             { 20, 10.5 }, { 21, 10.7 }, { 22, 10.9 }, { 23, 11.1 }, { 24, 11.3 }, { 25, 19.7 }, { 26, 20.0 }, { 27, 20.1 }, { 28, 20.4 }, { 29, 20.7 },
-            { 30, 20.8 }, { 31, 23.4 }, { 32, 23.6 }, { 33, 23.7 }, { 34, 25.8 }, { 35, 11.35 } };
+            { 30, 20.8 }, { 31, 23.4 }, { 32, 23.6 }, { 33, 23.7 }, { 34, 25.8 }, { 35, 11.35 },
+            { 36, 26.0 }, { 37, 26.2 }, { 38, 26.5 }, { 39, 26.9 }, { 40, 27.3 } };
         for (double[] sc : sched) times[(int) sc[0]] = sc[1];
         for (int i = 0; i < times.length; i++) steps.add(new double[] { times[i], i });
         steps.sort((a, b) -> Double.compare(a[0], b[0]));
@@ -62,13 +64,8 @@ final class DemoDriver {
             case 1: clickLogical(Ui.W / 2.0, 528); break;              // Play
             case 2: snap("02_mapselect"); break;
             case 3: {
-                {   // Play map 1: same layout math as MapSelectScreen (4 columns, rows by MAP_COUNT)
-                    int rows = Math.max(1, (lindefense.map.MapCatalog.MAP_COUNT + 3) / 4);
-                    double cardW = (Ui.W - 50 - 18 * 3) / 4.0;
-                    double cardH = (Ui.H - 28 - 108 - 18 * (rows - 1)) / rows;
-                    double buttonY = 108 + cardH - (cardH < 520 ? 54 : 70);
-                    clickLogical(25 + cardW / 2, buttonY + 20);
-                }
+                double[] dc = MapSelectScreen.deployCenter(0);   // Play map 1
+                clickLogical(dc[0], dc[1]);
                 Game g = app.getGame();
                 g.addCash(5000, null);
                 placeViaClick(TowerType.GPT, new Vec(380, 300));
@@ -93,7 +90,7 @@ final class DemoDriver {
                 resize(1500, 950);
                 Game g = app.getGame();
                 // jump to the finale: Palantir + a boss escort
-                for (int k = g.getWave(); k < 99; k++) { g.getWaveManager().startNextWave(); g.getWaveManager().endWave(); }
+                while (g.getWave() < 99) { g.getWaveManager().startNextWave(); g.getWaveManager().endWave(); }
                 g.getEnemyManager().clear();
                 g.startNextWave();
                 g.getEnemyManager().spawn(EnemyType.BELLARMINE_COLLEGE_PREP, null, 1, 400);
@@ -107,18 +104,29 @@ final class DemoDriver {
                 if (g.getPalantir() != null) g.getPalantir().beginSurveillance(g);
                 break;
             }
-            case 11: snap("06_palantir"); break;
+            case 11: {
+                Game g = app.getGame();
+                boolean ok = g.getWave() == 100 && g.getPalantir() != null && g.getPalantir().isAlive();
+                results.add((ok ? "PASS" : "FAIL") + " finale fights Palantir on wave 100 (wave " + g.getWave() + ", palantir " + (g.getPalantir() != null) + ")");
+                snap("06_palantir");
+                break;
+            }
             case 13: {
                 // ALL-towers shop view: toggle via the hotkey path, hover a cell, snapshot, then verify a cell click starts placement
                 app.getGameScreen().toggleShopAll();
-                ShopLayout.Cell cell = ShopLayout.allCells().get(19);
-                MouseEvent mv = pixelEvent(cell.x + 5, cell.y + 5);
+                // the shop re-lays itself out (compact / roomy cells) a frame after the toggle: let it settle, then take the
+                // card button's position from the CURRENT layout right before clicking
+                for (int k = 0; k < 4; k++) app.getGameScreen().frame(0.01);
+                TowerType want = ShopLayout.allCells().get(19).type;
+                List<UIButton> btns = app.getGameScreen().getSidePanel().getButtons();
+                UIButton card = btns.get(Faction.values().length + 2 + 19);   // tabs, ALL, help, then the cards in cell order
+                MouseEvent mv = pixelEvent(card.getX() + 5, card.getY() + 5);
                 app.mouseMoved(mv);
                 app.getGameScreen().frame(0.01);
                 snap("03b_shop_all");
                 app.mousePressed(mv);
-                boolean ok = app.getGameScreen().getPlacing() == cell.type && app.getGameScreen().getSidePanel().isAllMode();
-                results.add((ok ? "PASS" : "FAIL") + " ALL-view cell click starts placement of " + cell.type + " (got " + app.getGameScreen().getPlacing() + ")");
+                boolean ok = app.getGameScreen().getPlacing() == want && app.getGameScreen().getSidePanel().isAllMode();
+                results.add((ok ? "PASS" : "FAIL") + " ALL-view cell click starts placement of " + want + " (got " + app.getGameScreen().getPlacing() + ")");
                 app.getGameScreen().beginPlacing(null);
                 break;
             }
@@ -195,7 +203,12 @@ final class DemoDriver {
                 g.setSpeed(3);
                 break;
             }
-            case 31: snap("08_victory"); break;
+            case 31: {
+                boolean ok = app.getGame().getState() == Game.State.VICTORY;
+                results.add((ok ? "PASS" : "FAIL") + " victory screen reached (state " + app.getGame().getState() + ")");
+                snap("08_victory");
+                break;
+            }
             case 32: app.startGame(0); break;
             case 33: {
                 Game g = app.getGame();
@@ -217,6 +230,17 @@ final class DemoDriver {
                 gs.toggleHelp();
                 break;
             }
+            case 36: menuRestartFlow(); break;
+            case 37: resize(900, 600); break;
+            case 38: {
+                GameScreen gs = app.getGameScreen();
+                gs.openMenu(); gs.frame(0.01);
+                snap("10d_pause_menu_small");
+                resize(2400, 1400);
+                break;
+            }
+            case 39: { snap("10e_pause_menu_large"); resize(1600, 1028); break; }
+            case 40: menuQuitFlow(); break;
             case 12: {
                 for (String r : results) System.out.println(r);
                 System.out.println("DEMO DONE");
@@ -225,6 +249,50 @@ final class DemoDriver {
             }
             default: break;
         }
+    }
+
+    private void check(boolean ok, String what) { results.add((ok ? "PASS " : "FAIL ") + what); }
+
+    /** MENU -> RESTART -> confirm: a fresh game on the same map and difficulty (wave, cash, lives, towers reset). */
+    private void menuRestartFlow() {
+        app.startGame(0);
+        GameScreen gs = app.getGameScreen();
+        Game g0 = app.getGame();
+        g0.addCash(3000, null);
+        placeViaClick(TowerType.GPT, new Vec(380, 300));
+        g0.startNextWave();
+        g0.run(300);
+        boolean progressed = g0.getWave() > 0 && !g0.getTowerManager().getTowers().isEmpty();
+        gs.openMenu();
+        gs.frame(0.01);
+        check(gs.isMenuOpen() && g0.isPaused(), "MENU button path opens the pause menu and pauses the game");
+        snap("10_pause_menu");
+        clickLogical(600, 489);                                   // RESTART
+        check(gs.getPendingConfirm() == 1 && app.getGame() == g0, "RESTART asks for confirmation first");
+        gs.frame(0.01);
+        snap("10b_restart_confirm");
+        clickLogical(735, 595);                                   // NO
+        check(gs.getPendingConfirm() == 0 && app.getGame() == g0 && gs.isMenuOpen(), "NO keeps the current game and returns to the menu");
+        clickLogical(600, 489);
+        clickLogical(465, 595);                                   // YES
+        Game g1 = app.getGame();
+        check(progressed && g1 != g0 && g1.getWave() == 0 && g1.getLives() == g1.getDifficulty().startLives(Game.START_LIVES)
+            && g1.getCash() == g1.getDifficulty().startCash(Game.START_CASH) && g1.getTowerManager().getTowers().isEmpty()
+            && g1.getMap().getName().equals(g0.getMap().getName()) && g1.getDifficulty() == g0.getDifficulty() && !g1.isPaused(),
+            "RESTART YES gives a fresh game on the same map and difficulty (wave " + g1.getWave() + ", cash " + (int) g1.getCash() + ", lives " + g1.getLives() + ")");
+        check(app.getGameScreen() != gs, "old game screen was replaced");
+    }
+
+    /** MENU -> QUIT LEVEL -> confirm: back on the map select screen. */
+    private void menuQuitFlow() {
+        GameScreen gs = app.getGameScreen();
+        gs.openMenu();
+        gs.frame(0.01);
+        clickLogical(600, 657);                                   // QUIT LEVEL
+        check(gs.getPendingConfirm() == 2 && app.getGame() != null, "QUIT LEVEL asks for confirmation first");
+        clickLogical(465, 595);                                   // YES
+        check(app.getGame() == null && app.getGameScreen() == null, "QUIT LEVEL YES leaves the game (map select shown)");
+        snap("10c_quit_to_mapselect");
     }
 
     private void resize(int w, int h) {

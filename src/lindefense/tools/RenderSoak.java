@@ -44,8 +44,9 @@ import lindefense.ui.Ui;
  * toggles the shop, selects / sells / retargets towers, pauses, resizes the
  * window, and finishes on the victory and defeat screens.
  *
- * <p>Usage: {@code ./build.sh && java -XX:-OmitStackTraceInFastThrow -cp build:lib/acm.jar lindefense.tools.RenderSoak [maps] [framesPerWave]}
- * where {@code maps} is e.g. {@code 0123} (default all). Exits 0 when clean,
+ * <p>Usage: {@code ./build.sh && java -XX:-OmitStackTraceInFastThrow -cp build:lib/acm.jar lindefense.tools.RenderSoak [maps] [framesPerWave] [difficulty]}
+ * where {@code maps} is e.g. {@code 0123} (default all) and {@code difficulty} is O1, ON, ON2 or ONN (default: rotate
+ * through all four so every difficulty is played at least once when 4 maps run). Exits 0 when clean,
  * 1 when any exception was seen. Full traces go to {@code build/render-soak-<maps>.log}.</p>
  */
 public final class RenderSoak {
@@ -58,10 +59,14 @@ public final class RenderSoak {
     private static BufferedImage buffer;
     private static final Random RNG = new Random(7);
     private static int paints;
+    /** Peak number of live zones / walkers / drones / hazards seen per kind (proves the new effects were exercised). */
+    private static final Map<String, Integer> PEAK = new java.util.TreeMap<>();
+    private static int abilitiesFired, targetedFired;
 
     public static void main(String[] args) throws Exception {
         String maps = args.length > 0 ? args[0] : "0123";
         int framesPerWave = args.length > 1 ? Integer.parseInt(args[1]) : 220;
+        String diffArg = args.length > 2 ? args[2] : "rotate";
         String logName = "build/render-soak-" + maps + ".log";
         log = new PrintWriter(new FileWriter(logName), true);
         Thread.setDefaultUncaughtExceptionHandler((th, e) -> record("uncaught[" + th.getName() + "]", e));
@@ -78,10 +83,14 @@ public final class RenderSoak {
         System.out.println(captured ? "PASS self-test: EDT exceptions are captured" : "FAIL self-test: EDT exception was not captured");
         if (!captured) System.exit(2);
         long t0 = System.currentTimeMillis();
+        int mapsRun = 0;
         for (char c : maps.toCharArray()) {
             int m = c - '0';
             if (m < 0 || m >= MapCatalog.MAP_COUNT) continue;
-            System.out.println("== map " + m);
+            lindefense.sim.Difficulty[] all = lindefense.sim.Difficulty.values();
+            lindefense.sim.Difficulty diff = "rotate".equals(diffArg) ? all[mapsRun++ % all.length] : lindefense.sim.Difficulty.valueOf(diffArg);
+            lindefense.sim.Difficulty.setSelected(diff);
+            System.out.println("== map " + m + " difficulty " + diff);
             soakMap(m, framesPerWave);
             System.out.println("   done map " + m + " (" + (System.currentTimeMillis() - t0) / 1000 + "s, " + paints + " paints, " + SEEN.size() + " distinct errors so far)");
         }
@@ -92,6 +101,8 @@ public final class RenderSoak {
         for (Map.Entry<String, int[]> en : SEEN.entrySet()) {
             System.out.println("x" + en.getValue()[0] + "  " + en.getKey().replace("\n", "\n      "));
         }
+        System.out.println("Abilities fired: " + abilitiesFired + " (targeted: " + targetedFired + ")");
+        System.out.println("Effects exercised (peak live count): " + PEAK);
         System.out.println("Distinct errors: " + SEEN.size() + "   (full traces: " + logName + ")");
         log.close();
         System.exit(SEEN.isEmpty() ? 0 : 1);
@@ -179,11 +190,8 @@ public final class RenderSoak {
         edt("menu play", () -> { click(Ui.W / 2.0, 528); paint(); });
         for (int i = 0; i < 10; i++) edt("mapselect frame", () -> { menuFrames(0.05); app.mouseMoved(pixelEvent(100 + RNG.nextInt(1400), 100 + RNG.nextInt(800))); paint(); });
         edt("deploy", () -> {
-            int rows = Math.max(1, (MapCatalog.MAP_COUNT + 3) / 4);
-            double cardW = (Ui.W - 50 - 18 * 3) / 4.0;
-            double cardH = (Ui.H - 28 - 108 - 18 * (rows - 1)) / rows;
-            double buttonY = 108 + cardH - (cardH < 520 ? 54 : 70);
-            click(25 + (m % 4) * (cardW + 18) + cardW / 2, buttonY + 20);
+            double[] dc = lindefense.ui.MapSelectScreen.deployCenter(m);
+            click(dc[0], dc[1]);
             if (app.getGame() == null || app.getGame().getMap().getName() == null) app.startGame(m);
             paint();
         });
@@ -211,7 +219,7 @@ public final class RenderSoak {
                 app.getGameScreen().setSpeed(3);
                 g.addCash(1e6, null);
                 // upgrade progressively so every tier gets rendered for a while
-                int targetTier = Math.min(4, wv / 6);
+                int targetTier = Math.min(3, wv / 6);   // 3 upgrades per tower
                 for (Tower t : new ArrayList<>(g.getTowerManager().getPlayerTowers())) {
                     if (keepTier0.contains(t) && wv < 60) continue;
                     while (t.getTier() < targetTier && t.canUpgrade()) {
@@ -232,6 +240,7 @@ public final class RenderSoak {
                     if (gs == null) return;
                     gs.frame(0.1);
                     interact(g, gs, fr, wv);
+                    sampleEffects(g);
                     paint();
                 });
                 frames++;
@@ -285,6 +294,23 @@ public final class RenderSoak {
         edt("esc to menu", () -> { key(KeyEvent.VK_ESCAPE); paint(); });
     }
 
+    static void sampleEffects(Game g) {
+        Map<String, Integer> now = new LinkedHashMap<>();
+        for (lindefense.effects.TrackZone z : g.getEffects().getZones()) now.merge("zone:" + z.kind, 1, Integer::sum);
+        for (lindefense.effects.TrackWalker w : g.getEffects().getWalkers()) now.merge("walker:" + w.kind, 1, Integer::sum);
+        for (lindefense.effects.Drone d : g.getEffects().getDrones()) now.merge("drone:" + d.kind, 1, Integer::sum);
+        for (lindefense.effects.NodeHazard h : g.getEffects().getHazards()) now.merge("hazard:" + h.kind, 1, Integer::sum);
+        for (Map.Entry<String, Integer> e : now.entrySet()) PEAK.merge(e.getKey(), e.getValue(), Math::max);
+    }
+
+    /** A point on a route (preferably under a live enemy) for abilities that need a target point. */
+    static Vec trackPoint(Game g) {
+        List<Enemy> es = g.getEnemyManager().getEnemies();
+        Vec from = es.isEmpty() ? g.getMap().getRoutes().get(0).positionAt(300 + RNG.nextInt(400)) : es.get(RNG.nextInt(es.size())).getPosition();
+        lindefense.effects.Effects.TrackPoint tp = g.getEffects().nearestTrackPoint(from);
+        return tp == null ? from : tp.position;
+    }
+
     /** Advance whatever non-game screen is showing via the program's own components. */
     static void menuFrames(double dt) {
         // menu / map select animate from the program timer; call their frame via reflection-free path:
@@ -300,9 +326,10 @@ public final class RenderSoak {
         List<Vec> spots = new ArrayList<>();
         for (int x = 30; x < GameMap.WIDTH; x += 13) for (int y = 30; y < GameMap.HEIGHT; y += 13) spots.add(new Vec(x, y));
         java.util.Collections.shuffle(spots, new Random(3));
-        // two of each purchasable type, then fill with a few more
+        // two of each purchasable type (one of each hero)
         for (int round = 0; round < 2; round++) {
             for (TowerType t : TowerType.purchasable()) {
+                if (round == 1 && t.isHero()) continue;   // one copy per hero
                 double r = TowerCatalog.get(t).radius;
                 for (Vec p : spots) {
                     if (map.isBuildable(p, r) && g.getTowerManager().canPlace(t, p)) {
@@ -346,8 +373,23 @@ public final class RenderSoak {
     static void interact(Game g, GameScreen gs, int frame, int wave) {
         List<Tower> towers = g.getTowerManager().getTowers();
         switch (frame % 23) {
-            case 0: // abilities for everyone
-                for (Tower t : new ArrayList<>(towers)) if (t.isAbilityReady()) { gs.selectTower(t); gs.abilitySelected(); }
+            case 0: // abilities for everyone; targeted ones are armed through the UI and then cast on a track point
+                for (Tower t : new ArrayList<>(towers)) {
+                    if (!t.isAbilityReady() || t.getAbility() == null) continue;
+                    gs.selectTower(t);
+                    if (t.getAbility().needsTarget) {
+                        Vec v = trackPoint(g);
+                        if (RNG.nextBoolean()) {
+                            gs.fireAbility(t);                                     // arms targeting mode
+                            gs.mousePressed(v.x + Ui.WORLD_X, v.y + Ui.WORLD_Y, false);   // the click casts it
+                            if (!t.isAbilityReady()) targetedFired++;
+                            gs.cancelTargeting();
+                        } else if (g.activateAbility(t, v)) targetedFired++;
+                    } else {
+                        gs.abilitySelected();
+                    }
+                    if (!t.isAbilityReady()) abilitiesFired++;
+                }
                 break;
             case 2: if (!towers.isEmpty()) { gs.selectTower(towers.get(RNG.nextInt(towers.size()))); gs.cycleTargeting(RNG.nextBoolean() ? 1 : -1); } break;
             case 4: gs.toggleShopAll(); break;
@@ -373,7 +415,7 @@ public final class RenderSoak {
                     gs.selectTower(t);
                     gs.sellSelected();
                     Tower n = g.placeTower(type, pos);
-                    if (n != null) while (g.upgradeTower(n)) { /* to max */ }
+                    if (n != null) while (g.upgradeTower(n)) { /* to max */ }   // heroes are unique: re-buying after the sell is fine
                 }
             } break;
             case 16: key(KeyEvent.VK_P); gs.frame(0.05); paintQuiet(); key(KeyEvent.VK_P); break;

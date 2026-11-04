@@ -74,7 +74,7 @@ public final class Cyber {
     private static final Map<String, Font> FILES = new HashMap<>();
     private static boolean loaded;
 
-    private static final String[] FONT_FILES = {
+    public static final String[] FONT_FILES = {
         "Rajdhani-Medium.ttf", "Rajdhani-SemiBold.ttf", "Rajdhani-Bold.ttf",
         "Barlow-Regular.ttf", "Barlow-Medium.ttf", "Barlow-SemiBold.ttf", "Barlow-Bold.ttf",
         "IBMPlexMono-Regular.ttf", "IBMPlexMono-Medium.ttf", "IBMPlexMono-SemiBold.ttf", "IBMPlexMono-Bold.ttf" };
@@ -83,6 +83,7 @@ public final class Cyber {
         if (loaded) return;
         loaded = true;
         java.util.List<java.io.File> dirs = new java.util.ArrayList<>();
+        dirs.add(lindefense.Assets.file("assets/fonts"));   // working-directory independent lookup
         dirs.add(new java.io.File("assets/fonts"));
         dirs.add(new java.io.File(System.getProperty("user.dir", "."), "assets/fonts"));
         dirs.add(new java.io.File("../assets/fonts"));
@@ -159,8 +160,21 @@ public final class Cyber {
     public static String spaced(String s) { return s.toUpperCase(); }
 
     // ------------------------------------------------------------------ rendering
-    /** Applies the shared Java2D quality hints. */
+    /**
+     * Applies the shared Java2D quality hints. The root layer sets them once per frame and every child Graphics
+     * inherits them, so when they are already in effect this returns after a few cheap reads instead of re-setting
+     * seven hints for every custom-painted object.
+     */
     public static void quality(Graphics2D g2) {
+        if (g2.getRenderingHint(RenderingHints.KEY_RENDERING) == RenderingHints.VALUE_RENDER_QUALITY
+                && g2.getRenderingHint(RenderingHints.KEY_ANTIALIASING) == RenderingHints.VALUE_ANTIALIAS_ON
+                && g2.getRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING) == RenderingHints.VALUE_TEXT_ANTIALIAS_ON
+                && g2.getRenderingHint(RenderingHints.KEY_STROKE_CONTROL) == RenderingHints.VALUE_STROKE_PURE
+                && g2.getRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS) == RenderingHints.VALUE_FRACTIONALMETRICS_ON
+                && g2.getRenderingHint(RenderingHints.KEY_INTERPOLATION) == RenderingHints.VALUE_INTERPOLATION_BILINEAR
+                && g2.getRenderingHint(RenderingHints.KEY_COLOR_RENDERING) == RenderingHints.VALUE_COLOR_RENDER_QUALITY) {
+            return;
+        }
         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
@@ -197,6 +211,20 @@ public final class Cyber {
         private boolean scan = true;
         private boolean ticks;
         private float alpha = 1f;
+        /** The scanline stripes as one path (one fill per frame instead of one per stripe), rebuilt when the frame moves or resizes. */
+        private transient Path2D scanPath;
+        private double scanX = Double.NaN, scanY, scanW, scanH;
+        private static final Color SCANLINE = new Color(0, 0, 0, 52);
+
+        private Path2D scanlines() {
+            if (scanPath == null || scanX != getX() || scanY != getY() || scanW != w || scanH != h) {
+                Path2D.Double sp = new Path2D.Double();
+                for (double yy = getY() + 2; yy < getY() + h; yy += 3) sp.append(new Rectangle2D.Double(getX(), yy, w, 1), false);
+                scanPath = sp;
+                scanX = getX(); scanY = getY(); scanW = w; scanH = h;
+            }
+            return scanPath;
+        }
 
         public Chamfer(double x, double y, double w, double h, double cut) {
             this.w = w; this.h = h; this.cut = cut;
@@ -228,8 +256,8 @@ public final class Cyber {
                 if (scan && fill != null) {
                     Shape oldClip = g2.getClip();
                     g2.clip(p);
-                    g2.setColor(new Color(0, 0, 0, 52));
-                    for (double yy = getY() + 2; yy < getY() + h; yy += 3) g2.fill(new Rectangle2D.Double(getX(), yy, w, 1));
+                    g2.setColor(SCANLINE);
+                    g2.fill(scanlines());
                     g2.setClip(oldClip);
                 }
                 if (border != null) {
@@ -341,7 +369,34 @@ public final class Cyber {
 
         @Override public GRectangle getBounds() { return new GRectangle(getX(), getY(), w, h); }
 
+        /**
+         * Reduced bar for crowded screens (the world view's level of detail, see
+         * {@link lindefense.ui.sprites.Thick#setLevel}): backing and value only, plus the outline at level 1. Two or
+         * three fills instead of six plus a clip; plain enemy HP bars only (no chamfer, trail or notches).
+         */
+        private void paintSimple(Graphics2D g2, int lod) {
+            Color old = g2.getColor();
+            double x = getX(), y = getY();
+            g2.setColor(back);
+            g2.fill(new Rectangle2D.Double(x, y, w, h));
+            double fw = (w - 2 * lineW) * value;
+            if (fw > 0.3) {
+                g2.setColor(fill);
+                g2.fill(new Rectangle2D.Double(x + lineW, y, fw, h));
+            }
+            if (lod < 2 && outline != null) {
+                java.awt.Stroke os = g2.getStroke();
+                g2.setStroke(stroke(Math.max(1, lineW)));
+                g2.setColor(outline);
+                g2.draw(new Rectangle2D.Double(x + 0.5, y + 0.5, w - 1, h - 1));
+                g2.setStroke(os);
+            }
+            g2.setColor(old);
+        }
+
         @Override public void paint(Graphics g) {
+            int lod = lindefense.ui.sprites.Thick.level();
+            if (lod > 0 && cut <= 0 && !useTrail && notches.length == 0) { paintSimple((Graphics2D) g, lod); return; }
             Graphics2D g2 = (Graphics2D) g.create();
             try {
                 quality(g2);
@@ -410,7 +465,7 @@ public final class Cyber {
     }
 
     /** Vector glyphs for HUD chips and buttons. */
-    public enum Kind { PLAY, PAUSE, CASH, HEART, WAVE, ENEMY, AUTO, MENU, FAST, CHECK, SKULL }
+    public enum Kind { PLAY, PAUSE, CASH, HEART, WAVE, ENEMY, AUTO, MENU, FAST, CHECK, SKULL, SPEAKER, NOTE }
 
     /** A small flat vector icon, size x size, drawn at its location (top-left). */
     public static class Icon extends GObject {
@@ -421,7 +476,11 @@ public final class Cyber {
 
         public Icon(Kind kind, double size, Color color) { this.kind = kind; this.size = size; this.color = color; }
 
+        private boolean struck;
+
         public void setKind(Kind k) { kind = k; }
+        /** Draws a diagonal strike-through (used by the Sound / Music "off" state). */
+        public void setStruck(boolean s) { struck = s; }
         public void setIconColor(Color c) { color = c; }
 
         @Override public GRectangle getBounds() { return new GRectangle(getX(), getY(), size, size); }
@@ -509,7 +568,30 @@ public final class Cyber {
                         g2.fill(new Ellipse2D.Double(8.8, 5, 2.2, 2.6));
                         g2.draw(new Line2D.Double(6, 14, 10, 14));
                         break;
+                    case SPEAKER: {
+                        Path2D p = new Path2D.Double();
+                        p.moveTo(1.5, 5.8); p.lineTo(4.6, 5.8); p.lineTo(8.2, 2.6); p.lineTo(8.2, 13.4); p.lineTo(4.6, 10.2); p.lineTo(1.5, 10.2); p.closePath();
+                        g2.fill(p);
+                        g2.draw(new java.awt.geom.Arc2D.Double(6.2, 4.6, 5.0, 6.8, -60, 120, java.awt.geom.Arc2D.OPEN));
+                        g2.draw(new java.awt.geom.Arc2D.Double(5.4, 2.4, 8.6, 11.2, -55, 110, java.awt.geom.Arc2D.OPEN));
+                        break;
+                    }
+                    case NOTE:
+                        g2.fill(new Ellipse2D.Double(2.6, 10.0, 4.8, 3.8));
+                        g2.fill(new Ellipse2D.Double(9.2, 8.6, 4.8, 3.8));
+                        g2.draw(new Line2D.Double(7.2, 11.4, 7.2, 2.8));
+                        g2.draw(new Line2D.Double(13.8, 10.0, 13.8, 2.0));
+                        g2.draw(new Line2D.Double(7.2, 2.8, 13.8, 2.0));
+                        break;
                     default: break;
+                }
+                if (struck) {
+                    g2.setStroke(new BasicStroke(3.4f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    g2.setColor(new Color(0x0a1020));
+                    g2.draw(new Line2D.Double(2.6, 1.6, 14.2, 14.4));
+                    g2.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+                    g2.setColor(RED);
+                    g2.draw(new Line2D.Double(2.6, 1.6, 14.2, 14.4));
                 }
             } finally {
                 g2.dispose();

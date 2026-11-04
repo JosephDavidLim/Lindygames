@@ -2,31 +2,54 @@ package lindefense.combat;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import lindefense.enemy.Boss;
 import lindefense.enemy.Enemy;
+import lindefense.enemy.EnemyGrid;
 import lindefense.enemy.StatusEffect;
+import lindefense.map.Path;
 import lindefense.sim.Game;
 import lindefense.sim.Vec;
-import lindefense.tower.AttackKind;
 import lindefense.tower.Targeting;
 import lindefense.tower.Tower;
 import lindefense.tower.TowerStats;
 
 /**
- * The combat engine: target acquisition, attack execution for every
- * {@link AttackKind}, projectile movement/collision and the single damage
- * formula used by every hit in the game (towers, abilities and map hazards).
+ * The combat engine: target acquisition (including Densest Cluster), attack execution for every
+ * {@link lindefense.tower.AttackKind}, projectile movement/collision and the single damage formula
+ * ({@link #applyHit(HitContext)}) used by every hit in the game (towers, abilities, summons and map hazards).
+ *
+ * <p>Every proximity query (targets in range, enemies on a beam, splash, chain / bounce hops, projectile collisions)
+ * asks the {@link EnemyGrid} for the few enemies near the point instead of scanning every enemy, then applies the
+ * same exact test as before to those candidates, in the same order, so results are unchanged. Range checks use
+ * {@link Vec#withinDist} / {@link Vec#exceedsDist} (exactly {@code dist <= r} / {@code dist > r}, without the slow
+ * {@code Math.hypot}) and cheap geometric tests run before the boxed hit-id lookups.</p>
  */
 public class Combat {
     /** Maximum visual events kept per tick to keep the renderer responsive. */
     private static final int MAX_EVENTS_PER_TICK = 400;
+    /** SONIC knockback on Lead-type enemies (spec 3.0). */
+    public static final double SONIC_LEAD_KNOCKBACK = 20;
+    /** Ceramic multiplier for BLUNT / KINETIC / SONIC (spec 3.0). */
+    public static final double CERAMIC_MULT = 2.0;
+    /** Damage multiplier against FROZEN enemies (Claude Time-Lock). */
+    public static final double FROZEN_MULT = 2.0;
+    /** Damage multiplier against Fortified enemies while ARMOR CRACKED (the HP bonus is ignored: x2 damage). */
+    public static final double CRACKED_FORTIFIED_MULT = 2.0;
+
+    private static final Comparator<Enemy> FIRST = Comparator.comparingDouble(Enemy::getRemainingDistance);
+    private static final Comparator<Enemy> LAST = FIRST.reversed();
+    private static final Comparator<Enemy> STRONGEST = Comparator.comparingDouble(Enemy::getHp).reversed().thenComparingDouble(Enemy::getRemainingDistance);
+    private static final Comparator<Enemy> WEAKEST = Comparator.comparingDouble(Enemy::getHp).thenComparingDouble(Enemy::getRemainingDistance);
 
     private final Game game;
     private final List<Projectile> projectiles = new ArrayList<>();
     private final List<Projectile> newProjectiles = new ArrayList<>();
+    /** Grid query buffer; only used in stretches that cannot re-enter (no hits are applied while it is in use). */
+    private final List<Enemy> near = new ArrayList<>();
 
     public Combat(Game game) { this.game = game; }
 
@@ -38,35 +61,54 @@ public class Combat {
 
     /** Returns up to {@code n} valid targets for the tower, ordered by its priority. */
     public List<Enemy> acquireTargets(Tower t, int n) {
-        double range = t.effectiveRange(game);
-        Vec tp = t.getPosition();
-        boolean sees = t.canSeeCamo();
+        return acquireTargetsFrom(t.getPosition(), t.effectiveRange(game), t.canSeeCamo(), t.getStats().ignoresLos,
+            t.getTargeting(), n, t.getBehavior().priorityComparator(t));
+    }
+
+    /**
+     * General target acquisition from any point (towers, drones). {@code priority} (nullable) is applied before the
+     * targeting comparator.
+     */
+    public List<Enemy> acquireTargetsFrom(Vec origin, double range, boolean detection, boolean ignoreLos,
+                                          Targeting targeting, int n, Comparator<Enemy> priority) {
         List<Enemy> candidates = new ArrayList<>();
-        for (Enemy e : game.getEnemyManager().getEnemies()) {
-            if (!e.isTargetableBy(sees)) continue;
-            if (tp.dist(e.getPosition()) > range + e.getRadius()) continue;
-            if (!game.getMap().hasLineOfSight(tp, e.getPosition())) continue;
+        List<Enemy> pool = game.getEnemyManager().getGrid().near(origin.x, origin.y, range, near);
+        for (int i = 0, n2 = pool.size(); i < n2; i++) {
+            Enemy e = pool.get(i);
+            if (!e.isTargetableBy(detection)) continue;
+            if (origin.exceedsDist(e.getPosition(), range + e.getRadius())) continue;
+            if (!ignoreLos && !game.getMap().hasLineOfSight(origin, e.getPosition())) continue;
             candidates.add(e);
         }
         if (candidates.isEmpty()) return candidates;
-        candidates.sort(comparatorFor(t.getTargeting(), tp));
-        if (candidates.size() > n) return new ArrayList<>(candidates.subList(0, n));
+        Comparator<Enemy> cmp;
+        if (targeting == Targeting.DENSEST_CLUSTER) {
+            Map<Enemy, Integer> dens = new HashMap<>();
+            List<Enemy> pop = game.getEnemyManager().getEnemies();
+            for (Enemy e : candidates) dens.put(e, Clusters.density(e, pop));
+            cmp = Comparator.comparingInt((Enemy e) -> -dens.get(e)).thenComparingDouble(Enemy::getRemainingDistance);
+        } else {
+            cmp = comparatorFor(targeting, origin);
+        }
+        if (priority != null) cmp = priority.thenComparing(cmp);
+        if (candidates.size() > 1) candidates.sort(cmp);
+        if (candidates.size() > n) candidates.subList(n, candidates.size()).clear();
         return candidates;
     }
 
-    /** The ordering used by each targeting priority. */
+    /**
+     * The ordering used by each targeting priority. DENSEST_CLUSTER needs the whole population and is handled in
+     * {@link #acquireTargetsFrom}; here it falls back to First.
+     */
     public static Comparator<Enemy> comparatorFor(Targeting targeting, Vec towerPos) {
         switch (targeting) {
-            case LAST: return Comparator.comparingDouble(Enemy::getRemainingDistance).reversed();
-            case STRONGEST: return Comparator.comparingDouble(Enemy::getHp).reversed().thenComparingDouble(Enemy::getRemainingDistance);
-            case WEAKEST: return Comparator.comparingDouble(Enemy::getHp).thenComparingDouble(Enemy::getRemainingDistance);
+            case LAST: return LAST;
+            case STRONGEST: return STRONGEST;
+            case WEAKEST: return WEAKEST;
             case CLOSEST: return Comparator.comparingDouble((Enemy e) -> e.getPosition().distSq(towerPos));
-            case SMART: return Comparator.comparingInt((Enemy e) -> e.isCamo() ? 0 : 1)
-                .thenComparingInt(e -> e.isBoss() ? 0 : 1)
-                .thenComparingDouble(Enemy::getHp).reversed()
-                .thenComparingDouble(Enemy::getRemainingDistance);
             case FIRST:
-            default: return Comparator.comparingDouble(Enemy::getRemainingDistance);
+            case DENSEST_CLUSTER:
+            default: return FIRST;
         }
     }
 
@@ -74,126 +116,157 @@ public class Combat {
     // Attack execution
     // ------------------------------------------------------------------
 
-    /** Performs one attack for the tower if a target exists. Returns true if it attacked. */
-    public boolean attack(Tower t) {
+    /** Performs one attack for the tower (via its behaviour). Returns true if it attacked. */
+    public boolean attack(Tower t) { return t.getBehavior().attack(game, t); }
+
+    /** The data-driven base attack for the tower's {@link lindefense.tower.AttackKind}. */
+    public boolean genericAttack(Tower t) {
         TowerStats s = t.getStats();
         switch (s.kind) {
             case PULSE: return pulse(t, s);
-            case CHAIN: return chain(t, s);
-            case INSTANT: return instant(t, s);
-            case PROJECTILE: return shoot(t, s);
+            case PROJECTILE: case INSTANT: case CHAIN: break;
             default: return false;
+        }
+        int want = s.kind == lindefense.tower.AttackKind.INSTANT ? Math.max(s.targets, s.projectilesPerShot) : s.targets;
+        List<Enemy> targets = acquireTargets(t, Math.max(1, want));
+        if (targets.isEmpty()) return false;
+        AttackContext c = newAttackContext(t, targets);
+        t.getBehavior().modifyAttack(game, t, c);
+        if (c.cancel || c.targets.isEmpty()) return false;
+        executeAttack(c, t.getPosition(), t.canSeeCamo(), true);
+        t.setLastTarget(c.targets.get(0));
+        t.getBehavior().onFire(game, t, c);
+        t.onAttacked(game);
+        return true;
+    }
+
+    /** Builds the attack context for a tower from its current stats, buffs and map multipliers. */
+    public AttackContext newAttackContext(Tower t, List<Enemy> targets) {
+        TowerStats s = t.getStats();
+        AttackContext c = new AttackContext(t, s, targets);
+        c.damageMult = t.damageMultiplier(game);
+        c.pierce = t.effectivePierce();
+        c.bounces = s.bounces;
+        c.clones = s.clones;
+        c.splash = s.splashRadius;
+        c.speed = s.projectileSpeed * t.projectileSpeedMult();
+        return c;
+    }
+
+    /**
+     * Fires an attack described by the context from {@code origin}. Used by towers and by companions/drones,
+     * which pass their own stats and origin. {@code buffed} controls whether the owner's flat damage buff applies.
+     */
+    public void executeAttack(AttackContext c, Vec origin, boolean detection, boolean buffed) {
+        switch (c.stats.kind) {
+            case PROJECTILE: shoot(c, origin, detection, buffed); break;
+            case INSTANT: case CHAIN: beam(c, origin, detection, buffed); break;
+            default: break;
         }
     }
 
-    private boolean shoot(Tower t, TowerStats s) {
-        List<Enemy> targets = acquireTargets(t, s.targets);
-        if (targets.isEmpty()) return false;
-        double mult = t.damageMultiplier(game);
-        for (Enemy target : targets) {
-            for (int i = 0; i < s.projectilesPerShot; i++) {
-                Vec start = t.getPosition();
-                if (s.projectilesPerShot > 1) {
-                    double ang = (i - (s.projectilesPerShot - 1) / 2.0) * 0.35;
+    private void shoot(AttackContext c, Vec origin, boolean detection, boolean buffed) {
+        int shots = c.shotsPerTarget;
+        for (Enemy target : c.targets) {
+            for (int i = 0; i < shots; i++) {
+                Vec start = origin;
+                if (shots > 1) {
+                    double ang = (i - (shots - 1) / 2.0) * 0.35;
                     Vec d = target.getPosition().sub(start).normalized();
                     Vec perp = new Vec(-d.y, d.x);
                     start = start.add(perp.scale(ang * 20));
                 }
-                newProjectiles.add(new Projectile(t, s, start, target, mult, true, t.getType().primaryRgb));
+                Projectile.Shot sh = new Projectile.Shot();
+                sh.source = c.tower; sh.stats = c.stats; sh.hit = c.hit(); sh.start = start; sh.target = target;
+                sh.damageMult = c.damageMult; sh.extraDamage = c.extraDamage; sh.pierce = c.pierce;
+                sh.bounces = c.bounces; sh.bounceRange = c.stats.bounceRange; sh.bounceSpeedGain = c.stats.p("bounceSpeedGain", 0);
+                sh.clones = c.clones; sh.splash = c.splash; sh.speed = c.speed; sh.detection = detection;
+                sh.rgb = c.tower.getType().primaryRgb; sh.tag = c.tag; sh.buffed = buffed;
+                newProjectiles.add(new Projectile(sh));
             }
-            t.setLastTarget(target);
         }
-        t.onAttacked(game);
-        return true;
     }
 
-    private boolean instant(Tower t, TowerStats s) {
-        List<Enemy> targets = acquireTargets(t, s.targets);
-        if (targets.isEmpty()) return false;
-        double mult = t.damageMultiplier(game);
-        for (Enemy target : targets) {
-            Vec tp = t.getPosition();
-            if (s.pierce > 1) {
-                // beam through everything on the line tower -> target, out to range
-                Vec dir = target.getPosition().sub(tp).normalized();
-                double range = t.effectiveRange(game);
-                Vec end = tp.add(dir.scale(range));
+    /** Instant beams (INSTANT) and chains (CHAIN). */
+    private void beam(AttackContext c, Vec origin, boolean detection, boolean buffed) {
+        TowerStats s = c.stats;
+        int rgb = c.tower.getType().primaryRgb;
+        boolean chainOnly = s.kind == lindefense.tower.AttackKind.CHAIN;
+        // INSTANT: one beam per requested target/shot, cycling over the acquired targets; CHAIN: a single chain
+        int beams = chainOnly ? 1 : Math.max(Math.max(s.targets, c.shotsPerTarget), c.targets.size());
+        Set<Integer> hitAlready = new HashSet<>();
+        for (int b = 0; b < beams; b++) {
+            Enemy target = c.targets.get(b % c.targets.size());
+            if (!target.isAlive()) continue;
+            Enemy last = target;
+            if (!chainOnly && c.pierce > 1) {
+                Vec dir = target.getPosition().sub(origin).normalized();
+                double range = s.hasUnlimitedRange() ? TowerStats.UNLIMITED_RANGE : c.tower.effectiveRange(game);
+                Vec end = origin.add(dir.scale(range));
                 List<Enemy> onLine = new ArrayList<>();
-                for (Enemy e : game.getEnemyManager().getEnemies()) {
-                    if (!e.isTargetableBy(t.canSeeCamo())) continue;
-                    if (lindefense.map.Path.pointSegmentDistance(e.getPosition(), tp, end) <= e.getRadius() + 4) onLine.add(e);
+                List<Enemy> pool = game.getEnemyManager().getGrid().box(Math.min(origin.x, end.x) - 4, Math.min(origin.y, end.y) - 4,
+                    Math.max(origin.x, end.x) + 4, Math.max(origin.y, end.y) + 4, near);
+                for (int i = 0, n = pool.size(); i < n; i++) {
+                    Enemy e = pool.get(i);
+                    if (!e.isTargetableBy(detection)) continue;
+                    if (Path.pointSegmentDistance(e.getPosition(), origin, end) <= e.getRadius() + 4) onLine.add(e);
                 }
-                onLine.sort(Comparator.comparingDouble(e -> e.getPosition().distSq(tp)));
+                onLine.sort(Comparator.comparingDouble(e -> e.getPosition().distSq(origin)));
                 int hits = 0;
                 for (Enemy e : onLine) {
-                    if (hits++ >= s.pierce) break;
-                    int extra = t.registerStackHit(e.getId());
-                    applyHit(e, s.hit, t, mult, extra * s.stackStep);
+                    if (hits++ >= c.pierce) break;
+                    beamHit(c, e, buffed, detection);
+                    hitAlready.add(e.getId());
                 }
-                emit(VisualEvent.beam(tp, end, t.getType().primaryRgb));
+                emit(VisualEvent.beam(origin, end, rgb));
             } else {
-                int extra = t.registerStackHit(target.getId());
-                applyHit(target, s.hit, t, mult, extra * s.stackStep);
-                emit(VisualEvent.beam(tp, target.getPosition(), t.getType().primaryRgb));
+                beamHit(c, target, buffed, detection);
+                hitAlready.add(target.getId());
+                emit(chainOnly ? VisualEvent.chain(origin, target.getPosition(), rgb) : VisualEvent.beam(origin, target.getPosition(), rgb));
             }
-            t.setLastTarget(target);
+            if (s.chainHops > 0) {
+                Enemy cur = last;
+                for (int hop = 0; hop < s.chainHops; hop++) {
+                    Enemy next = nearestEnemy(cur.getPosition(), s.chainRange, hitAlready, detection);
+                    if (next == null) break;
+                    emit(VisualEvent.chain(cur.getPosition(), next.getPosition(), c.tower.getType().secondaryRgb));
+                    beamHit(c, next, buffed, detection);
+                    hitAlready.add(next.getId());
+                    cur = next;
+                }
+            }
         }
-        t.onAttacked(game);
-        return true;
     }
 
-    private boolean chain(Tower t, TowerStats s) {
-        List<Enemy> targets = acquireTargets(t, 1);
-        if (targets.isEmpty()) return false;
-        double mult = t.damageMultiplier(game);
-        Enemy cur = targets.get(0);
-        Set<Integer> hit = new HashSet<>();
-        Vec from = t.getPosition();
-        applyHit(cur, s.hit, t, mult, 0);
-        emit(VisualEvent.chain(from, cur.getPosition(), t.getType().primaryRgb));
-        hit.add(cur.getId());
-        for (int hop = 0; hop < s.chainHops; hop++) {
-            Enemy next = nearestEnemy(cur.getPosition(), s.chainRange, hit, t.canSeeCamo());
-            if (next == null) break;
-            emit(VisualEvent.chain(cur.getPosition(), next.getPosition(), t.getType().secondaryRgb));
-            applyHit(next, s.hit, t, mult, 0);
-            hit.add(next.getId());
-            cur = next;
-        }
-        t.setLastTarget(targets.get(0));
-        t.onAttacked(game);
-        return true;
+    private void beamHit(AttackContext c, Enemy e, boolean buffed, boolean detection) {
+        HitContext h = new HitContext(e, c.hit(), c.tower);
+        h.mult = c.damageMult; h.extra = c.extraDamage; h.fromAttack = buffed; h.detection = detection; h.tag = c.tag;
+        applyHit(h);
     }
 
     private boolean pulse(Tower t, TowerStats s) {
         double range = t.effectiveRange(game);
         Vec tp = t.getPosition();
         List<Enemy> inRange = new ArrayList<>();
-        for (Enemy e : game.getEnemyManager().getEnemies()) {
+        List<Enemy> pool = game.getEnemyManager().getGrid().near(tp.x, tp.y, range, near);
+        for (int i = 0, n = pool.size(); i < n; i++) {
+            Enemy e = pool.get(i);
             if (!e.isTargetableBy(t.canSeeCamo())) continue;
-            if (tp.dist(e.getPosition()) <= range + e.getRadius()) inRange.add(e);
+            if (tp.withinDist(e.getPosition(), range + e.getRadius())) inRange.add(e);
         }
         if (inRange.isEmpty()) return false;
         inRange.sort(comparatorFor(t.getTargeting(), tp));
-        int idx = t.nextPulseIndex();
-        boolean heavy = s.heavyEvery > 0 && idx % s.heavyEvery == 0;
-        HitSpec h = s.hit;
-        if (heavy || s.resonancePer > 0) {
-            h = s.hit.copy();
-            if (heavy) {
-                h.stunDuration = Math.max(h.stunDuration, s.heavyStun);
-                h.knockback = Math.max(h.knockback, s.heavyKnockback);
-            }
-            if (s.resonancePer > 0) h.damage += Math.min(s.resonanceCap, inRange.size() / s.resonancePer);
-        }
-        double mult = t.damageMultiplier(game);
+        AttackContext c = newAttackContext(t, inRange);
+        t.getBehavior().modifyAttack(game, t, c);
+        if (c.cancel) return false;
         int n = 0;
-        for (Enemy e : inRange) {
-            if (n++ >= s.pierce) break;
-            applyHit(e, h, t, mult, 0);
+        for (Enemy e : c.targets) {
+            if (n++ >= c.pierce) break;
+            beamHit(c, e, true, t.canSeeCamo());
         }
-        emit(VisualEvent.ability(tp, range, heavy ? t.getType().secondaryRgb : t.getType().primaryRgb));
-        t.setLastTarget(inRange.get(0));
+        emit(VisualEvent.ability(tp, range, t.getType().primaryRgb));
+        t.setLastTarget(c.targets.get(0));
+        t.getBehavior().onFire(game, t, c);
         t.onAttacked(game);
         return true;
     }
@@ -202,11 +275,14 @@ public class Combat {
     public Enemy nearestEnemy(Vec p, double radius, Set<Integer> exclude, boolean seesCamo) {
         Enemy best = null;
         double bestD = radius * radius;
-        for (Enemy e : game.getEnemyManager().getEnemies()) {
+        List<Enemy> pool = game.getEnemyManager().getGrid().near(p.x, p.y, radius, near);
+        for (int i = 0, n = pool.size(); i < n; i++) {
+            Enemy e = pool.get(i);
+            double d = e.getPosition().distSq(p);
+            if (!(d <= bestD)) continue;
             if (!e.isTargetableBy(seesCamo)) continue;
             if (exclude != null && exclude.contains(e.getId())) continue;
-            double d = e.getPosition().distSq(p);
-            if (d <= bestD) { bestD = d; best = e; }
+            bestD = d; best = e;
         }
         return best;
     }
@@ -217,20 +293,31 @@ public class Combat {
 
     public void addProjectile(Projectile p) { newProjectiles.add(p); }
 
+    /** Fires a projectile described by a {@link Projectile.Shot}. */
+    public Projectile fire(Projectile.Shot shot) {
+        Projectile p = new Projectile(shot);
+        newProjectiles.add(p);
+        return p;
+    }
+
     public void updateProjectiles(double dt) {
         if (!newProjectiles.isEmpty()) { projectiles.addAll(newProjectiles); newProjectiles.clear(); }
-        List<Enemy> enemies = game.getEnemyManager().getEnemies();
+        EnemyGrid grid = game.getEnemyManager().getGrid();
         for (int i = 0; i < projectiles.size(); i++) {
             Projectile p = projectiles.get(i);
             if (!p.move(dt)) continue;
-            boolean sees = p.getSource().canSeeCamo();
-            for (int j = 0; j < enemies.size() && p.isAlive(); j++) {
-                Enemy e = enemies.get(j);
-                if (!e.isTargetableBy(sees) || p.getHitIds().contains(e.getId())) continue;
-                double r = e.getRadius() + p.getSize();
-                if (e.getPosition().distSq(p.getPosition()) <= r * r) {
+            boolean sees = p.hasDetection();
+            // a hit can knock enemies around (splash knockback, behaviours), so iterate with a self-refreshing scan
+            EnemyGrid.Scan scan = grid.scan(p.getPosition().x, p.getPosition().y, p.getSize());
+            try {
+                for (Enemy e = scan.next(); e != null && p.isAlive(); e = scan.next()) {
+                    double r = e.getRadius() + p.getSize();
+                    if (!(e.getPosition().distSq(p.getPosition()) <= r * r)) continue;
+                    if (!e.isTargetableBy(sees) || p.getHitIds().contains(e.getId())) continue;
                     onProjectileHit(p, e);
                 }
+            } finally {
+                scan.close();
             }
         }
         for (int i = projectiles.size() - 1; i >= 0; i--) {
@@ -244,52 +331,83 @@ public class Combat {
     }
 
     private void onProjectileHit(Projectile p, Enemy e) {
-        TowerStats s = p.getStats();
-        Tower t = p.getSource();
+        Projectile.Shot sh = p.getShot();
+        Tower t = sh.source;
         p.getHitIds().add(e.getId());
-        if (s.splashRadius > 0) {
-            areaHit(p.getPosition(), s.splashRadius, s.hit, t, p.getDamageMult(), s.pierce, null, true);
-            emit(VisualEvent.explosion(p.getPosition(), s.splashRadius, t.getType().primaryRgb));
+        if (sh.splash > 0) {
+            int cap = sh.pierce > 1 ? sh.pierce : 999;
+            areaHit(p.getPosition(), sh.splash, sh.hit, t, sh.damageMult, sh.extraDamage, cap, null, sh.detection, sh.buffed, p);
+            emit(VisualEvent.explosion(p.getPosition(), sh.splash, t.getType().primaryRgb));
             p.kill();
             return;
         }
-        applyHit(e, s.hit, t, p.getDamageMult(), 0);
+        HitContext h = new HitContext(e, sh.hit, t);
+        h.mult = sh.damageMult; h.extra = sh.extraDamage; h.fromAttack = sh.buffed; h.detection = sh.detection;
+        h.projectile = p; h.tag = sh.tag;
+        applyHit(h);
         emit(VisualEvent.hit(e.getPosition(), t.getType().primaryRgb));
         if (p.canClone()) {
             p.consumeClone();
             Set<Integer> exclude = new HashSet<>(p.getHitIds());
-            for (int c = 1; c < s.clones; c++) {
-                Enemy nt = nearestEnemy(e.getPosition(), s.bounceRange, exclude, t.canSeeCamo());
+            for (int c = 1; c < sh.clones; c++) {
+                Enemy nt = nearestEnemy(e.getPosition(), sh.bounceRange, exclude, sh.detection);
                 if (nt == null) break;
                 exclude.add(nt.getId());
-                Projectile clone = new Projectile(t, s, e.getPosition(), nt, p.getDamageMult(), false, t.getType().secondaryRgb);
+                Projectile.Shot cs = copyShot(sh);
+                cs.start = e.getPosition(); cs.target = nt; cs.clones = 0; cs.rgb = t.getType().secondaryRgb;
+                Projectile clone = new Projectile(cs);
                 clone.getHitIds().add(e.getId());
                 newProjectiles.add(clone);
             }
         }
         if (p.getBouncesLeft() > 0) {
-            Enemy next = nearestEnemy(e.getPosition(), s.bounceRange, p.getHitIds(), t.canSeeCamo());
+            Enemy next = nearestEnemy(e.getPosition(), sh.bounceRange, p.getHitIds(), sh.detection);
             if (next != null) { p.consumeBounce(); p.retarget(next); return; }
         }
         if (p.consumePierce()) p.kill();
     }
 
-    /** Hits every targetable enemy within radius (up to maxTargets, nearest first). */
-    public int areaHit(Vec center, double radius, HitSpec hit, Tower source, double mult, int maxTargets,
-                       Set<Integer> exclude, boolean requireDetection) {
+    private static Projectile.Shot copyShot(Projectile.Shot o) {
+        Projectile.Shot s = new Projectile.Shot();
+        s.source = o.source; s.stats = o.stats; s.hit = o.hit; s.start = o.start; s.target = o.target;
+        s.damageMult = o.damageMult; s.extraDamage = o.extraDamage; s.pierce = o.pierce; s.bounces = o.bounces;
+        s.bounceRange = o.bounceRange; s.bounceSpeedGain = o.bounceSpeedGain; s.clones = o.clones; s.splash = o.splash;
+        s.speed = o.speed; s.detection = o.detection; s.rgb = o.rgb; s.tag = o.tag; s.buffed = o.buffed;
+        return s;
+    }
+
+    // ------------------------------------------------------------------
+    // Area hits
+    // ------------------------------------------------------------------
+
+    /**
+     * Hits every enemy within radius (up to maxTargets, nearest first) with an ability-style hit (no attack buffs).
+     * Detection for the EXPLOSIVE-vs-camo rule is the source tower's detection (true when source is null).
+     */
+    public int areaHit(Vec center, double radius, HitSpec hit, Tower source, double mult, int maxTargets, Set<Integer> exclude) {
+        return areaHit(center, radius, hit, source, mult, 0, maxTargets, exclude, source == null || source.canSeeCamo(), false, null);
+    }
+
+    /** Full-control area hit; see {@link #areaHit(Vec, double, HitSpec, Tower, double, int, Set)}. */
+    public int areaHit(Vec center, double radius, HitSpec hit, Tower source, double mult, double extra, int maxTargets,
+                       Set<Integer> exclude, boolean detection, boolean fromAttack, Projectile via) {
         List<Enemy> inRange = new ArrayList<>();
-        boolean sees = source == null || !requireDetection || source.canSeeCamo();
-        for (Enemy e : game.getEnemyManager().getEnemies()) {
-            if (!e.isTargetableBy(sees)) continue;
+        List<Enemy> pool = game.getEnemyManager().getGrid().near(center.x, center.y, radius, near);
+        for (int i = 0, n = pool.size(); i < n; i++) {
+            Enemy e = pool.get(i);
+            if (!e.isAlive() || e.isStored()) continue;
+            if (!e.getPosition().withinDist(center, radius + e.getRadius())) continue;
             if (exclude != null && exclude.contains(e.getId())) continue;
-            if (e.getPosition().dist(center) <= radius + e.getRadius()) inRange.add(e);
+            inRange.add(e);
         }
         inRange.sort(Comparator.comparingDouble(e -> e.getPosition().distSq(center)));
         int n = 0;
         for (Enemy e : inRange) {
             if (n >= maxTargets) break;
-            applyHit(e, hit, source, mult, 0);
-            n++;
+            HitContext h = new HitContext(e, hit, source);
+            h.mult = mult; h.extra = extra; h.fromAttack = fromAttack; h.detection = detection; h.projectile = via;
+            applyHit(h);
+            if (!h.immune) n++;
         }
         return n;
     }
@@ -299,73 +417,136 @@ public class Combat {
     // ------------------------------------------------------------------
 
     /**
-     * Applies a hit to an enemy and returns the HP actually removed.
-     *
-     * <pre>
-     * raw     = (hit.damage + extra) * mult * (1 + situational bonuses)
-     * raw    *= resistance(type)            (0 = immune; ignored if hit.ignoresResistance or TRUE)
-     * raw    *= 1 - armour * (1 - armorPierce)
-     * raw    *= 0.5 if boss weak-hit rule applies, 0.5 if Heap-shielded
-     * raw    *= 1 + marked bonus
-     * raw    += min(pctCap, pctMaxHp * maxHp)
-     * </pre>
-     * Control effects (slow, stun, knockback, armour break, mark, disrupt, DOT)
-     * are then applied with boss-specific values; Palantir in phase 1 ignores
-     * slows, stuns and knockback.
+     * Legacy entry: applies a hit and returns the HP actually removed. Ability-style (no attack buffs);
+     * detection comes from the source tower.
      */
     public double applyHit(Enemy e, HitSpec hit, Tower source, double mult, double extra) {
-        if (e == null || !e.isAlive() || e.isStored()) return 0;
-        double raw = (hit.damage + extra) * mult;
-        double bonus = 1.0;
-        if (e.isBoss()) bonus += hit.bonusVsBoss;
-        if (e.isFortified()) bonus += hit.bonusVsFortified; else bonus += hit.bonusVsNonFortified;
-        if (e.getType().isComplex()) bonus += hit.bonusVsComplex;
-        if (e.getType().isFast()) bonus += hit.bonusVsFast;
-        if (e.getType().hasChildren()) bonus += hit.bonusVsSplitters;
-        raw *= Math.max(0.1, bonus);
+        HitContext h = new HitContext(e, hit, source);
+        h.mult = mult; h.extra = extra;
+        return applyHit(h);
+    }
 
-        double resist = (hit.ignoresResistance || hit.type == DamageType.TRUE) ? 1.0 : e.resistanceMultiplier(hit.type);
-        boolean immune = resist <= 0;
-        double dmg = raw * resist;
-        if (hit.type != DamageType.TRUE) {
-            double armor = e.effectiveArmor() * (1 - hit.armorPierce);
-            dmg *= (1 - Math.max(0, Math.min(0.95, armor)));
-            int weak = e.getType().getWeakHitThreshold();
-            if (weak > 0 && hit.damage < weak) dmg *= 0.5;
+    /**
+     * Applies a hit and returns the HP actually removed.
+     *
+     * <pre>
+     * base   = hit.damage + extra [+ buffed flat damage if fromAttack] + flat bonuses (boss/Fortified/Lead/Ceramic)
+     * raw    = base * mult * (1 + legacy % bonuses) * type & situation multipliers:
+     *            BLUNT/KINETIC/SONIC x2 vs Ceramic; hit.multVs* ; x(1+buff) vs MOAB-class ;
+     *            x2 vs FROZEN ; x2 vs Fortified while ARMOR CRACKED
+     * immune : SHARP vs Lead (unless cracked / hit.ignoresResistance); EXPLOSIVE vs Camo without detection
+     * dmg    = raw * (1 - armour * (1 - armorPierce))        (TRUE skips this)
+     * dmg   *= 0.5 BFB weak-hit rule, 0.5 Heap shield          (weak-hit skipped for TRUE)
+     * dmg    = dmg * (1 + percent mark) + flat mark           (TRUE skips marks)
+     * dmg   += min(pctCap, pctMaxHp * maxHp)
+     * dmg    = dmg * finalMult + finalFlat
+     * </pre>
+     * Control effects (slow, stun, knockback, armour crack, marks, burn, disrupt, strips) are then applied unless the
+     * hit was blocked by an immunity. Tower behaviours get {@code beforeHit} (before the maths) and {@code onHit}.
+     */
+    public double applyHit(HitContext c) {
+        Enemy e = c.target;
+        if (e == null || !e.isAlive() || e.isStored()) return 0;
+        Tower src = c.source;
+        if (src != null) src.getBehavior().beforeHit(game, src, c);
+        HitSpec h = c.hit();
+        DamageType type = h.type;
+        boolean isTrue = type == DamageType.TRUE;
+
+        // ---- immunities ----
+        boolean cracked = e.isArmorCracked();
+        boolean immune = false;
+        if (!isTrue) {
+            if (type == DamageType.SHARP && e.isLeadType() && !cracked && !h.ignoresResistance) immune = true;
+            if (type == DamageType.EXPLOSIVE && e.isCamo() && !c.detection && !e.isRevealed()) immune = true;
         }
-        if (e.isShielded(game.getTick())) dmg *= 0.5;
-        dmg *= 1 + e.getMarkedBonus();
-        if (hit.pctMaxHp > 0) dmg += Math.min(hit.pctCap, hit.pctMaxHp * e.getMaxHp());
+        c.immune = immune;
+
+        double dmg = 0;
+        if (!immune) {
+            double base = h.damage + c.extra;
+            if (c.fromAttack && src != null) base += src.flatDamageBuff();
+            if (e.isBoss()) base += h.flatVsBoss;
+            if (e.isFortified()) base += h.flatVsFortified;
+            if (e.isLeadType()) base += h.flatVsLead;
+            if (e.isCeramicType()) base += h.flatVsCeramic;
+            double bonus = 1.0;
+            if (e.isBoss()) bonus += h.bonusVsBoss;
+            if (e.isFortified()) bonus += h.bonusVsFortified; else bonus += h.bonusVsNonFortified;
+            if (e.getType().isComplex()) bonus += h.bonusVsComplex;
+            if (e.getType().isFast()) bonus += h.bonusVsFast;
+            if (e.getType().hasChildren()) bonus += h.bonusVsSplitters;
+            double m = Math.max(0.1, bonus);
+            if (!isTrue) {
+                if (e.isCeramicType() && (type.isBluntLike() || type == DamageType.SONIC)) m *= CERAMIC_MULT;
+                if (e.isCeramicType()) m *= h.multVsCeramic;
+                if (e.isLeadType()) m *= h.multVsLead;
+                if (e.isFortified()) { m *= h.multVsFortified; if (cracked) m *= CRACKED_FORTIFIED_MULT; }
+                if (e.isBoss()) {
+                    m *= h.multVsBoss;
+                    if (src != null) m *= 1 + src.bossDamageBuff();
+                }
+                if (e.getType().isSortingAlgorithm() || e.getType().isLinkedList()) m *= h.multVsSortingAndLists;
+                if (e.getType().baseHp >= 5) m *= h.multVsHighHp;
+                if (e.isFrozen()) m *= FROZEN_MULT;
+            }
+            dmg = base * c.mult * m;
+            if (!isTrue) {
+                double armor = e.effectiveArmor() * (1 - h.armorPierce);
+                dmg *= (1 - Math.max(0, Math.min(0.95, armor)));
+                int weak = e.getType().getWeakHitThreshold();
+                if (weak > 0 && h.damage < weak) dmg *= 0.5;
+            }
+            if (e.isShielded(game.getTick())) dmg *= 0.5;
+            if (!isTrue) {
+                dmg *= 1 + e.getMarkedBonus();
+                if (dmg > 0) dmg += e.getMarkedFlat();
+            }
+            if (h.pctMaxHp > 0) dmg += Math.min(h.pctCap, h.pctMaxHp * e.getMaxHp());
+            dmg = dmg * c.finalMult + c.finalFlat;
+        }
 
         double dealt = 0;
         if (!immune && dmg > 0) {
             dealt = e.takeDamage(dmg, game.getTime());
-            e.setLastHitBy(source);
-            if (source != null) source.addDamageDealt(dealt);
-        } else if (immune && source != null && game.getRng().chance(0.05)) {
+            if (src != null) { e.setLastHitBy(src); src.addDamageDealt(dealt); }
+        } else if (immune && src != null && game.getRng().chance(0.05)) {
             emit(VisualEvent.text(e.getPosition(), "Immune", 0xaaaaaa));
         }
+        c.dealt = dealt;
 
-        // control effects
-        boolean controlImmune = (e instanceof Boss) && ((Boss) e).isControlImmune();
-        if (!controlImmune) {
-            if (hit.slowFraction > 0) e.applyStatus(StatusEffect.Kind.SLOW, hit.slowFraction, hit.slowDuration);
-            double stun = e.isBoss() ? hit.bossStunDuration : hit.stunDuration;
-            if (stun > 0) e.applyStatus(StatusEffect.Kind.STUN, 1, stun);
-            double kb = e.isBoss() ? hit.bossKnockback : hit.knockback;
-            if (kb > 0 && !immune) {
-                if (hit.uncappedKnockback) e.shiftDistance(-kb); else e.applyKnockback(kb, game.getTime());
+        if (!immune) applyEffects(c, e, h, type);
+        if (src != null) src.getBehavior().onHit(game, src, c);
+        return dealt;
+    }
+
+    /** Control effects of a hit (spec 3.0 status rules live in {@code Enemy.applyStatus}). */
+    private void applyEffects(HitContext c, Enemy e, HitSpec h, DamageType type) {
+        Tower src = c.source;
+        if (h.slowFraction > 0) e.applyStatus(StatusEffect.Kind.SLOW, h.slowFraction, h.slowDuration);
+        double stun = e.isBoss() ? h.bossStunDuration : h.stunDuration;
+        if (stun > 0) e.applyStatus(StatusEffect.Kind.STUN, 1, stun, true);
+        double kb = e.isBoss() ? h.bossKnockback : h.knockback;
+        if (!e.isBoss()) {
+            if (h.knockbackVsFast > 0 && e.isFastForKnockback()) kb += h.knockbackVsFast;
+            if (e.isLeadType()) {
+                kb += h.knockbackVsLead;
+                if (type == DamageType.SONIC) kb += SONIC_LEAD_KNOCKBACK;
             }
         }
-        if (hit.armorBreak > 0) e.applyStatus(StatusEffect.Kind.ARMOR_BREAK, hit.armorBreak, hit.armorBreakDuration);
-        if (hit.markBonus > 0) e.applyStatus(StatusEffect.Kind.MARKED, hit.markBonus, hit.markDuration);
-        if (hit.disruptDuration > 0) e.applyStatus(StatusEffect.Kind.DISRUPTED, 1, hit.disruptDuration);
-        if (hit.dotDps > 0) e.applyStatus(StatusEffect.Kind.DOT, hit.dotDps, hit.dotDuration);
-        if (hit.stripsFortified && !e.isBoss() && e.isFortified()) {
+        if (kb > 0) {
+            if (h.uncappedKnockback) e.applyKnockbackUncapped(kb); else e.applyKnockback(kb, game.getTime());
+        }
+        if (h.armorBreak > 0 && h.armorBreakDuration > 0) e.applyStatus(StatusEffect.Kind.ARMOR_CRACK, 1, h.armorBreakDuration);
+        if (h.markBonus > 0) e.applyStatus(StatusEffect.Kind.MARKED, h.markBonus, h.markDuration);
+        if (h.markFlat > 0) e.applyStatus(StatusEffect.Kind.MARKED_FLAT, h.markFlat, h.markDuration);
+        if (h.disruptDuration > 0) e.applyStatus(StatusEffect.Kind.DISRUPTED, 1, h.disruptDuration);
+        if (h.dotDps > 0) e.applyBurn(h.dotDps, h.dotDuration, src);
+        if (h.stripsFortified && !e.isBoss() && e.isFortified()) {
             e.stripFortified();
             emit(VisualEvent.text(e.getPosition(), "Stripped!", 0xd9c6ff));
         }
-        return dealt;
+        if (h.stripsCamoRegrow && e.stripCamoRegrow()) emit(VisualEvent.text(e.getPosition(), "Revealed", 0xb9a8ff));
     }
 
     /** True damage from map hazards (short circuits, heat). */
@@ -377,7 +558,8 @@ public class Combat {
         return dealt;
     }
 
-    private void emit(VisualEvent ev) {
+    /** Emits a visual event (throttled per tick). */
+    public void emit(VisualEvent ev) {
         if (game.getEvents().size() < MAX_EVENTS_PER_TICK) game.getEvents().add(ev);
     }
 

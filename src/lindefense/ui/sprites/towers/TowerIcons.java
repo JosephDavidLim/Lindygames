@@ -18,12 +18,12 @@ public final class TowerIcons {
      * Creates an icon.
      *
      * @param type tower type
-     * @param tier progression tier (0-4, clamped)
+     * @param tier game tier (0-3, clamped); drawn with art stages {0, 2, 3, 4}
      * @param size box side in logical units
      * @return a compound whose content fits in the box centred at (0,0)
      */
     public static GCompound create(TowerType type, int tier, double size) {
-        int t = Math.max(0, Math.min(4, tier));
+        int t = TowerArtFactory.artStage(tier);   // tier is a game tier (0-3)
         // tier 4 bodies carry an aura ring that needs room; lower tiers can be drawn larger
         double extent = t >= 4 ? EXTENT : 1.45;
         double r = size / (2 * extent);

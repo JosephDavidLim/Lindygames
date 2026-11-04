@@ -25,6 +25,8 @@ public final class MapSelectScreen extends GCompound {
     private static final int COLS = 4;
 
     private final List<NeonButton> buttons = new ArrayList<>();
+    private final List<UIButton> chips = new ArrayList<>();
+    private AudioToggle[] audioToggles;
     private final LogoEmblem mark;
     private double t;
     private final DifficultySelector difficulty;   // DIFFICULTY HOOK
@@ -49,11 +51,12 @@ public final class MapSelectScreen extends GCompound {
         int n = maps.size();
         int rows = Math.max(1, (n + COLS - 1) / COLS);
         // DIFFICULTY HOOK: mode picker under the subtitle; map cards start lower to make room
-        difficulty = new DifficultySelector(25, 100, Ui.W - 50);
+        difficulty = new DifficultySelector(25, 104, Ui.W - 50);
         add(difficulty);
-        double top = 178, bottom = Ui.H - 28, gap = 18;
+        double top = 104 + DifficultySelector.HEIGHT + 40, bottom = Ui.H - 28, gap = 18;
         double cardW = (Ui.W - 50 - gap * (COLS - 1)) / COLS;
-        double cardH = (bottom - top - gap * (rows - 1)) / rows;
+        double cardH = Math.min(rows == 1 ? 540 : 520, (bottom - top - gap * (rows - 1)) / rows);   // capped: no big empty gap under the text
+        top += Math.max(0, ((bottom - top - gap * (rows - 1)) / rows - cardH) * 0.35 * rows);   // sit slightly above centre when the cards are capped
         for (int i = 0; i < n; i++) {
             GameMap m = maps.get(i);
             int col = i % COLS, row = i / COLS;
@@ -62,6 +65,26 @@ public final class MapSelectScreen extends GCompound {
         NeonButton back = new NeonButton(25, 28, 130, 42, "BACK", MenuScreen.menuFont(Font.BOLD, 18), MenuScreen.CYAN, app::showMenu);
         buttons.add(back);
         add(back);
+        // AUDIO: Sound / Music toggles beside BACK
+        audioToggles = AudioToggle.pair(168, 28, 118, 42, 8, "SOUND", "MUSIC", chips);
+        for (UIButton c : chips) add(c);
+    }
+
+    /**
+     * Logical centre of a map card's DEPLOY button, for tools that click through the real UI (the demo driver). Mirrors the
+     * layout in the constructor.
+     */
+    public static double[] deployCenter(int idx) {
+        int n = lindefense.map.MapCatalog.MAP_COUNT, rows = Math.max(1, (n + COLS - 1) / COLS);
+        double top = 104 + DifficultySelector.HEIGHT + 40, bottom = Ui.H - 28, gap = 18;
+        double cardW = (Ui.W - 50 - gap * (COLS - 1)) / COLS;
+        double full = (bottom - top - gap * (rows - 1)) / rows;
+        double cardH = Math.min(rows == 1 ? 540 : 520, full);
+        top += Math.max(0, (full - cardH) * 0.35 * rows);
+        boolean compact = cardH < 520;
+        double y = top + (idx / COLS) * (cardH + gap), x = 25 + (idx % COLS) * (cardW + gap);
+        double by = y + cardH - (compact ? 54 : 70), bh = compact ? 40 : 50;
+        return new double[] { x + cardW / 2, by + bh / 2 };
     }
 
     private static String spaced(String s) {
@@ -90,7 +113,7 @@ public final class MapSelectScreen extends GCompound {
         inner.setColor(Ui.withAlpha(dc, 70));
         add(inner);
         // preview thumbnail (uniform scale, centred)
-        double ph = Math.min(230, h * 0.42);
+        double ph = Math.min(300, h * 0.46);
         double s = Math.min((w - 24) / GameMap.WIDTH, ph / GameMap.HEIGHT);
         double pw = GameMap.WIDTH * s;
         ph = GameMap.HEIGHT * s;
@@ -163,17 +186,22 @@ public final class MapSelectScreen extends GCompound {
     }
 
     public void mousePressed(double lx, double ly) {
-        if (difficulty.mousePressed(lx, ly)) return;   // DIFFICULTY HOOK
+        for (UIButton c : chips) if (c.hit(lx, ly)) { c.click(); return; }
+        if (difficulty.mousePressed(lx, ly)) { lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_CLICK); return; }   // DIFFICULTY HOOK / AUDIO HOOK
         for (NeonButton b : buttons) if (b.hit(lx, ly)) { b.click(); return; }
     }
 
     public void mouseMoved(double lx, double ly) {
+        difficulty.mouseMoved(lx, ly);
         for (NeonButton b : buttons) b.setHover(b.hit(lx, ly));
+        for (UIButton c : chips) c.setHover(c.hit(lx, ly));
     }
 
     public void frame(double dt) {
         t += dt;
         mark.animate(t);
         for (NeonButton b : buttons) b.animate(dt);
+        AudioToggle.syncAll(audioToggles);
+        for (UIButton c : chips) c.animate(dt);
     }
 }

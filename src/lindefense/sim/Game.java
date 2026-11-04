@@ -2,8 +2,11 @@ package lindefense.sim;
 
 import java.util.ArrayList;
 import java.util.List;
+import lindefense.audio.AudioManager;
+import lindefense.audio.Sfx;
 import lindefense.combat.Combat;
 import lindefense.combat.VisualEvent;
+import lindefense.effects.Effects;
 import lindefense.enemy.Boss;
 import lindefense.enemy.Enemy;
 import lindefense.enemy.EnemyManager;
@@ -39,6 +42,7 @@ public final class Game {
     private final WaveManager waveManager;
     private final AbilityManager abilityManager;
     private final Combat combat;
+    private final Effects effects;
     private final List<VisualEvent> events = new ArrayList<>();
     private final List<String> log = new ArrayList<>();
 
@@ -61,6 +65,7 @@ public final class Game {
     private double defeatTimer = -1;
     private int lastCompletedWave;
     private double totalCashEarned;
+    private double roundPopValue;
     private double globalEnemySpeedMultiplier = 1.0;
     private boolean invincible;
 
@@ -78,7 +83,15 @@ public final class Game {
         this.waveManager = new WaveManager(this);
         this.abilityManager = new AbilityManager(this);
         this.combat = new Combat(this);
+        this.effects = new Effects(this);
         map.reset();
+    }
+
+    /** A brand-new game on the same map and difficulty as {@code old} (used by RESTART): wave, cash, lives and all state reset. */
+    public static Game freshCopy(Game old) {
+        int idx = lindefense.map.MapCatalog.indexOf(old.getMap());
+        if (idx < 0) throw new IllegalArgumentException("map is not in the catalog: " + old.getMap().getName());
+        return new Game(lindefense.map.MapCatalog.create(idx), System.nanoTime(), old.getDifficulty());
     }
 
     // ---------------- accessors ----------------
@@ -91,6 +104,8 @@ public final class Game {
     public WaveManager getWaveManager() { return waveManager; }
     public AbilityManager getAbilityManager() { return abilityManager; }
     public Combat getCombat() { return combat; }
+    /** Zones, walkers, drones, node hazards and scheduled tasks spawned by tower behaviours. */
+    public Effects getEffects() { return effects; }
     public List<VisualEvent> getEvents() { return events; }
     public List<String> getLog() { return log; }
     public State getState() { return state; }
@@ -103,6 +118,9 @@ public final class Game {
     public int getWave() { return waveManager.getCurrentWave(); }
     public int getLastCompletedWave() { return lastCompletedWave; }
     public double getTotalCashEarned() { return totalCashEarned; }
+    /** Cash paid by enemy pops since the current wave started (Perplexity Deep Research Scrape). */
+    public double getRoundPopValue() { return roundPopValue; }
+    public void addPopValue(double v) { roundPopValue += v; }
     public Boss getPalantir() { return palantir; }
     public boolean isVictorySequenceActive() { return victoryTimer > 0; }
     public double getVictoryTimer() { return victoryTimer; }
@@ -152,6 +170,7 @@ public final class Game {
     public void loseLives(int n, Enemy leaker) {
         if (state != State.PLAYING || n <= 0) return;
         lives = Math.max(0, lives - n);
+        AudioManager.sfx(Sfx.LIFE_LOST);   // AUDIO HOOK
         events.add(VisualEvent.text(leaker.getPosition(), "-" + n + " lives", 0xff5a5a));
         if (invincible) { lives = Math.max(lives, 1); return; }
         if (lives <= 0 && defeatTimer < 0 && victoryTimer < 0) {
@@ -169,12 +188,39 @@ public final class Game {
 
     public Tower placeTower(TowerType type, Vec p) {
         if (state != State.PLAYING) return null;
-        return towerManager.place(type, p);
+        Tower placed = towerManager.place(type, p);
+        AudioManager.sfx(placed != null ? Sfx.TOWER_PLACE : Sfx.INVALID);   // AUDIO HOOK
+        return placed;
     }
 
-    public boolean upgradeTower(Tower t) { return state == State.PLAYING && towerManager.upgrade(t); }
-    public int sellTower(Tower t) { return state == State.PLAYING ? towerManager.sell(t) : 0; }
-    public boolean activateAbility(Tower t) { return state == State.PLAYING && abilityManager.activate(t); }
+    /**
+     * Why a tower cannot be placed at {@code p} ("Cannot build here", "Overlaps another tower",
+     * "Only one Brad Lindemann allowed", "Not enough cash"), or null if it can.
+     */
+    public String placementProblem(TowerType type, Vec p) { return towerManager.placementProblem(type, p); }
+
+    public boolean upgradeTower(Tower t) {
+        boolean ok = state == State.PLAYING && towerManager.upgrade(t);
+        AudioManager.sfx(ok ? Sfx.TOWER_UPGRADE : Sfx.INVALID);   // AUDIO HOOK
+        return ok;
+    }
+    public int sellTower(Tower t) {
+        int refund = state == State.PLAYING ? towerManager.sell(t) : 0;
+        if (refund > 0) AudioManager.sfx(Sfx.TOWER_SELL);   // AUDIO HOOK
+        return refund;
+    }
+    /** Activates an ability that needs no location (see {@link #activateAbility(Tower, Vec)} for targeted ones). */
+    public boolean activateAbility(Tower t) {
+        boolean ok = state == State.PLAYING && abilityManager.activate(t);
+        AudioManager.sfx(ok ? Sfx.ABILITY : Sfx.INVALID);   // AUDIO HOOK
+        return ok;
+    }
+    /** Activates an ability at a player-chosen map point (DALL-E Outpainting, Mistral Stratosphere Tempest). */
+    public boolean activateAbility(Tower t, Vec targetPoint) {
+        boolean ok = state == State.PLAYING && abilityManager.activate(t, targetPoint);
+        AudioManager.sfx(ok ? Sfx.ABILITY : Sfx.INVALID);   // AUDIO HOOK
+        return ok;
+    }
 
     // ---------------- simulation ----------------
     /**
@@ -217,6 +263,7 @@ public final class Game {
         waveManager.update(dt);
         map.update(this, dt);
         towerManager.update(dt);
+        effects.update(dt);
         combat.updateProjectiles(dt);
         enemyManager.update(dt);
     }
@@ -233,7 +280,9 @@ public final class Game {
 
     // ---------------- hooks from subsystems ----------------
     public void onWaveStarted(int wave, WaveDef def) {
+        roundPopValue = 0;
         map.onWaveStart(this, wave);
+        AudioManager.sfx(def.containsBoss() ? Sfx.BOSS_ALARM : Sfx.WAVE_START);   // AUDIO HOOK
         String msg = "Wave " + wave;
         if (def.containsBoss()) msg += "  -  BOSS INCOMING";
         setBanner(msg, def.containsBoss() ? 0xff8080 : 0xffffff, 2.5);
@@ -242,9 +291,10 @@ public final class Game {
 
     public void onWaveCompleted(int wave, WaveDef def) {
         lastCompletedWave = wave;
+        AudioManager.sfx(Sfx.WAVE_COMPLETE); AudioManager.sfx(Sfx.CASH);   // AUDIO HOOK
         int bonus = (int) Math.round(WaveData.waveBonus(wave) * difficulty.income);   // DIFFICULTY HOOK
         double income = 0;
-        for (Tower t : towerManager.getTowers()) income += t.getStats().incomePerWave;
+        for (Tower t : new ArrayList<>(towerManager.getTowers())) income += t.getBehavior().onRoundEnd(this, t);
         addCash(bonus + income, null);
         setBanner("Wave " + wave + " complete  +$" + (int) (bonus + income), 0x7fd8a8, 2.5);
         log("Wave " + wave + " complete: +$" + bonus + (income > 0 ? " (+$" + (int) income + " research income)" : ""));
@@ -255,6 +305,7 @@ public final class Game {
     }
 
     public void onEnemyKilled(Enemy e) {
+        if (e.getType().isBoss()) AudioManager.sfx(Sfx.BOSS_DEATH);   // AUDIO HOOK
         if (e.getType() == EnemyType.PALANTIR && victoryTimer < 0) {
             victoryTimer = VICTORY_SEQUENCE_TIME;
             setBanner("PALANTIR DESTROYED", 0xffd166, VICTORY_SEQUENCE_TIME);
@@ -266,6 +317,7 @@ public final class Game {
     }
 
     public void announceBoss(Boss b) {
+        AudioManager.sfx(Sfx.BOSS_ALARM);   // AUDIO HOOK
         if (b.isPalantir()) {
             palantir = b;
             setBanner("PALANTIR HAS ARRIVED  -  " + b.getPhaseName(), 0xff4d4d, 4);
@@ -289,6 +341,7 @@ public final class Game {
     }
 
     public void onSurveillanceTelegraph(Boss b, List<Tower> marked) {
+        AudioManager.sfx(Sfx.PALANTIR_WARNING);   // AUDIO HOOK
         setBanner("PREDICTIVE SURVEILLANCE: analysing " + marked.size() + " towers...", 0xff4d4d, Boss.TELEGRAPH_TIME);
         for (Tower t : marked) events.add(VisualEvent.text(t.getPosition(), "TARGETED", 0xff4d4d));
     }

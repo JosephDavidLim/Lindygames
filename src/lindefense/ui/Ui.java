@@ -99,4 +99,12 @@ public final class Ui {
         if (Math.abs(v - Math.rint(v)) < 1e-9) return String.valueOf((long) Math.rint(v));
         return String.format("%.1f", v);
     }
+
+    /**
+     * Unit count of a wave after the difficulty has shaped it ({@code game.getDifficulty().shape(...)}, exactly what the
+     * wave manager spawns), not the base O(1) count. Used by the bottom strip's next-wave preview.
+     */
+    public static int shapedUnits(lindefense.sim.Game game, int wave) {
+        return game.getDifficulty().shape(lindefense.wave.WaveData.get(wave), game.getSeed()).totalSpawns();
+    }
 }

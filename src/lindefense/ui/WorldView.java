@@ -11,6 +11,7 @@ import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -20,6 +21,7 @@ import lindefense.combat.Projectile;
 import lindefense.combat.VisualEvent;
 import lindefense.enemy.Boss;
 import lindefense.enemy.Enemy;
+import lindefense.effects.Effects;
 import lindefense.map.GameMap;
 import lindefense.map.HallucinationCanyon;
 import lindefense.map.LegacyMonolith;
@@ -27,12 +29,14 @@ import lindefense.map.Path;
 import lindefense.map.SiliconCircuit;
 import lindefense.sim.Game;
 import lindefense.sim.Vec;
+import lindefense.tower.AbilityDef;
 import lindefense.tower.Tower;
 import lindefense.tower.TowerCatalog;
 import lindefense.tower.TowerType;
 import lindefense.ui.sprites.Animated;
 import lindefense.ui.sprites.EnemySprite;
 import lindefense.ui.sprites.SpriteFactory;
+import lindefense.ui.sprites.Thick;
 import lindefense.ui.sprites.towers.ProjectileSprite;
 import lindefense.ui.sprites.towers.ProjectileSprites;
 
@@ -42,10 +46,33 @@ import lindefense.ui.sprites.towers.ProjectileSprites;
  * surveillance telegraph and the placement ghost / range circle. All children
  * live in world coordinates (1200x900); the compound sits at the world origin
  * inside the scaled root.
+ *
+ * <h3>Big fights</h3>
+ * <ul>
+ *   <li><b>Level of detail</b>: the number of sprites on screen picks a level (see {@link #LOD_DECOR_LOAD}) that is
+ *       applied while this view paints ({@link Thick#setLevel}): decorative and then fine sprite details are skipped,
+ *       enemy HP bars are drawn simplified.</li>
+ *   <li><b>Effect caps</b>: at most {@link #MAX_EFFECTS} legacy and {@link #MAX_EFFECTS} animated effects at full
+ *       detail, fewer at higher levels of detail ({@link #effectCap()}); extra visual events are dropped.</li>
+ *   <li><b>Effect pool</b>: the simple flash / ring / text effects are pooled. A finished one is hidden and stays in
+ *       the effect layer for reuse, so a busy frame neither allocates new GObjects for them nor pays ACM's linear
+ *       {@code remove} for each one that expires.</li>
+ * </ul>
  */
 public final class WorldView extends GCompound {
     private static final long serialVersionUID = 1L;
     private static final int MAX_EFFECTS = 160;
+
+    /**
+     * Level of detail for crowded screens (see {@link Thick#setLevel}). The "load" is the number of enemy sprites plus
+     * half the tower sprites; at {@link #LOD_DECOR_LOAD} decorative parts (shadows, gloss, cracks, overlay accents) are
+     * skipped, at {@link #LOD_FINE_LOAD} also the small features (eyes, thin outlines). Each tier switches back off only
+     * when the load falls 20% below its threshold, so a crowd hovering at a threshold does not flicker.
+     * {@code -Dlindefense.lod=0|1|2} pins the level (comparisons, screenshots).
+     */
+    static final int LOD_DECOR_LOAD = 60, LOD_FINE_LOAD = 150;
+    private static final int LOD_FORCED = Integer.getInteger("lindefense.lod", -1);
+    private int lod;
 
     private final GameScreen screen;
     private final Game game;
@@ -59,6 +86,7 @@ public final class WorldView extends GCompound {
     private final GCompound projectileLayer = new GCompound();
     private final GCompound effectLayer = new GCompound();
     private final GCompound overlay = new GCompound();
+    private final WorldFx fx;
 
     private final Map<Tower, TowerSprite> towerSprites = new HashMap<>();
     private final Map<Enemy, EnemySprite> enemySprites = new HashMap<>();
@@ -70,6 +98,9 @@ public final class WorldView extends GCompound {
 
     private Cyber.Ring rangeCircle, ghost, ghostRange;
     private GLine ghostX1, ghostX2;
+    private Cyber.Ring reticleRadius, reticleDot;
+    private GLine reticleH, reticleV, reticleLink;
+    private Nameplate reticlePlate;
     private Nameplate ghostPlate, hoverPlate, selectPlate;
     private double viewScale = 1, viewDock;
     private final List<GOval> padFill = new ArrayList<>();
@@ -83,11 +114,14 @@ public final class WorldView extends GCompound {
         this.game = screen.getGame();
         this.map = game.getMap();
         setLocation(0, 0);
+        fx = new WorldFx(game);
         buildBackground();
         add(background);
         add(mapFx);
+        add(fx.ground());
         add(towerLayer);
         add(enemyLayer);
+        add(fx.top());
         add(hpLayer);
         add(projectileLayer);
         add(effectLayer);
@@ -191,10 +225,20 @@ public final class WorldView extends GCompound {
         ghostX1.setColor(Cyber.RED); ghostX2.setColor(Cyber.RED);
         ghostX1.setVisible(false); ghostX2.setVisible(false);
         overlay.add(ghostX1); overlay.add(ghostX2);
+        reticleRadius = new Cyber.Ring(0, 0, 10, 10, Cyber.alpha(Cyber.YELLOW, 28), Cyber.alpha(Cyber.YELLOW, 235));
+        reticleRadius.setLineWidth(2.4); reticleRadius.setDashed(true); reticleRadius.setVisible(false);
+        reticleDot = new Cyber.Ring(0, 0, 10, 10, null, Cyber.YELLOW);
+        reticleDot.setLineWidth(2.6); reticleDot.setVisible(false);
+        reticleH = new GLine(0, 0, 1, 1); reticleV = new GLine(0, 0, 1, 1); reticleLink = new GLine(0, 0, 1, 1);
+        reticleH.setColor(Cyber.YELLOW); reticleV.setColor(Cyber.YELLOW); reticleLink.setColor(Cyber.alpha(Cyber.YELLOW, 120));
+
+        reticleH.setVisible(false); reticleV.setVisible(false); reticleLink.setVisible(false);
+        reticlePlate = new Nameplate();
+        overlay.add(reticleRadius); overlay.add(reticleLink); overlay.add(reticleDot); overlay.add(reticleH); overlay.add(reticleV);
         hoverPlate = new Nameplate();
         selectPlate = new Nameplate();
         ghostPlate = new Nameplate();
-        overlay.add(hoverPlate); overlay.add(selectPlate); overlay.add(ghostPlate);
+        overlay.add(hoverPlate); overlay.add(selectPlate); overlay.add(ghostPlate); overlay.add(reticlePlate);
     }
 
     // ------------------------------------------------------------------ per frame
@@ -202,6 +246,9 @@ public final class WorldView extends GCompound {
         time += dt;
         syncTowers(dt);
         syncEnemies(dt);
+        updateLod();
+        fx.setLod(lod);
+        fx.update(dt);
         syncProjectiles();
         consumeEvents();
         stepEffects(dt);
@@ -258,7 +305,7 @@ public final class WorldView extends GCompound {
                 it.remove();
                 Cyber.Bar bar = hpBars.remove(e);
                 if (bar != null) hpLayer.remove(bar);
-                if (!e.isAlive() && !e.hasLeaked() && animated.size() < MAX_EFFECTS) {
+                if (!e.isAlive() && !e.hasLeaked() && animated.size() < effectCap()) {
                     Animated fx = e.getType().hasChildren() ? SpriteFactory.createSplitEffect(e) : SpriteFactory.createDeathEffect(e);
                     if (fx instanceof GObject) { effectLayer.add((GObject) fx); animated.add(fx); }
                 }
@@ -284,10 +331,10 @@ public final class WorldView extends GCompound {
         }
         double f = e.getHpFraction();
         bar.setSize(w, h);
-        bar.setLocation(e.getPosition().x - w / 2, e.getPosition().y - r - h - 6);
-        bar.setValue(f);
-        bar.setFill(Cyber.hpColor(f));
-        bar.setVisible(true);
+        double bx = e.getPosition().x - w / 2, by = e.getPosition().y - r - h - 6;
+        if (bx != bar.getX() || by != bar.getY()) bar.setLocation(bx, by);
+        if (f != bar.getValue()) { bar.setValue(f); bar.setFill(Cyber.hpColor(f)); }
+        if (!bar.isVisible()) bar.setVisible(true);
     }
 
     private void syncProjectiles() {
@@ -308,18 +355,88 @@ public final class WorldView extends GCompound {
         }
     }
 
-    /** A transient effect built from a VisualEvent. */
+    /** Picks the level of detail for this frame from the number of sprites on screen (with hysteresis). */
+    private void updateLod() {
+        if (LOD_FORCED >= 0) { lod = LOD_FORCED; return; }
+        int load = enemySprites.size() + towerSprites.size() / 2;
+        int want = load >= LOD_FINE_LOAD ? 2 : load >= LOD_DECOR_LOAD ? 1 : 0;
+        if (want > lod) lod = want;
+        else if (lod == 2 && load < LOD_FINE_LOAD * 0.8) lod = load >= LOD_DECOR_LOAD ? 1 : 0;
+        else if (lod == 1 && load < LOD_DECOR_LOAD * 0.8) lod = 0;
+    }
+
+    /** Current level of detail (0 = full detail). */
+    public int getLod() { return lod; }
+
+    /** Effect cap for the current level of detail (applies separately to legacy and animated effects). */
+    private int effectCap() { return lod == 0 ? MAX_EFFECTS : lod == 1 ? MAX_EFFECTS * 5 / 8 : MAX_EFFECTS * 3 / 8; }
+
+    /** A transient effect built from a VisualEvent (pooled together with its GObject). */
     private static final class Effect {
-        final GObject obj; final VisualEvent ev; double t; final Color base;
-        Effect(GObject obj, VisualEvent ev, Color base) { this.obj = obj; this.ev = ev; this.base = base; }
+        GObject obj; VisualEvent ev; double t; Color base;
+        Effect set(GObject o, VisualEvent e, Color b) { obj = o; ev = e; base = b; t = 0; return this; }
+    }
+
+    // pools of finished legacy effects: their GObjects stay (hidden) in the effect layer for reuse
+    private final ArrayDeque<Effect> effectPool = new ArrayDeque<>();
+    private final ArrayDeque<GOval> ovalPool = new ArrayDeque<>();
+    private final ArrayDeque<GLine> linePool = new ArrayDeque<>();
+    private final ArrayDeque<GLabel> labelPool = new ArrayDeque<>();
+
+    private Effect effect(GObject o, VisualEvent ev, Color base) {
+        Effect e = effectPool.isEmpty() ? new Effect() : effectPool.pop();
+        return e.set(o, ev, base);
+    }
+
+    /** A pooled (or new) oval in the effect layer, configured like {@link Ui#oval}. */
+    private GOval pooledOval(double x, double y, double w, double h, Color fill, Color outline) {
+        GOval o = ovalPool.poll();
+        if (o == null) { o = Ui.oval(x, y, w, h, fill, outline); effectLayer.add(o); return o; }
+        o.setBounds(x, y, w, h);
+        o.setFilled(fill != null);
+        if (fill != null) o.setFillColor(fill);
+        o.setColor(outline != null ? outline : (fill != null ? fill : Ui.TEXT));
+        o.setVisible(true);
+        return o;
+    }
+
+    private GLine pooledLine(Vec a, Vec b, Color col) {
+        GLine l = linePool.poll();
+        if (l == null) { l = new GLine(a.x, a.y, b.x, b.y); effectLayer.add(l); }
+        else { l.setStartPoint(a.x, a.y); l.setEndPoint(b.x, b.y); l.setVisible(true); }
+        l.setColor(col);
+        return l;
+    }
+
+    private GLabel pooledLabel(String text, Font f, Color col) {
+        GLabel l = labelPool.poll();
+        if (l == null) { l = Ui.label(text, 0, 0, f, col); effectLayer.add(l); return l; }
+        l.setLabel(text);
+        l.setFont(f);
+        l.setColor(col);
+        l.setVisible(true);
+        return l;
+    }
+
+    /** Hides a finished legacy effect and returns it and its object to the pools. */
+    private void recycle(Effect e) {
+        e.obj.setVisible(false);
+        if (e.obj instanceof GOval) ovalPool.push((GOval) e.obj);
+        else if (e.obj instanceof GLine) linePool.push((GLine) e.obj);
+        else if (e.obj instanceof GLabel) labelPool.push((GLabel) e.obj);
+        else effectLayer.remove(e.obj);
+        e.obj = null; e.ev = null;
+        effectPool.push(e);
     }
 
     private void consumeEvents() {
+        int cap = effectCap();
         for (VisualEvent ev : game.drainEvents()) {
-            if (effects.size() >= MAX_EFFECTS && ev.kind != VisualEvent.Kind.PHASE && ev.kind != VisualEvent.Kind.BANNER) continue;
+            lindefense.audio.AudioManager.event(ev);   // AUDIO HOOK
+            if (effects.size() >= cap && ev.kind != VisualEvent.Kind.PHASE && ev.kind != VisualEvent.Kind.BANNER) continue;
             if (ev.kind == VisualEvent.Kind.BEAM || ev.kind == VisualEvent.Kind.CHAIN
                     || ev.kind == VisualEvent.Kind.HIT || ev.kind == VisualEvent.Kind.EXPLOSION) {
-                if (animated.size() >= MAX_EFFECTS) continue;
+                if (animated.size() >= cap) continue;
                 Animated fx = ProjectileSprites.createAttackEffect(ev);
                 if (fx != null) {
                     effectLayer.add((GObject) fx);
@@ -327,21 +444,17 @@ public final class WorldView extends GCompound {
                     continue;
                 }
             }
+            if (ev.kind == VisualEvent.Kind.ABILITY) fx.onAbilityEvent(ev);
             Color col = Ui.c(ev.rgb);
             GObject o = null;
             switch (ev.kind) {
-                case BEAM: case CHAIN: {
-                    GLine l = new GLine(ev.a.x, ev.a.y, ev.b.x, ev.b.y);
-                    l.setColor(col);
-                    o = l;
-                    break;
-                }
-                case HIT: o = Ui.oval(ev.a.x - ev.radius, ev.a.y - ev.radius, ev.radius * 2, ev.radius * 2, Ui.withAlpha(col, 200), null); break;
+                case BEAM: case CHAIN: o = pooledLine(ev.a, ev.b, col); break;
+                case HIT: o = pooledOval(ev.a.x - ev.radius, ev.a.y - ev.radius, ev.radius * 2, ev.radius * 2, Ui.withAlpha(col, 200), null); break;
                 case EXPLOSION: case ABILITY: case TELEPORT: case DEATH: case SPLIT: case PHASE:
-                    o = Ui.oval(ev.a.x - 4, ev.a.y - 4, 8, 8, ev.kind == VisualEvent.Kind.EXPLOSION ? Ui.withAlpha(col, 90) : null, col);
+                    o = pooledOval(ev.a.x - 4, ev.a.y - 4, 8, 8, ev.kind == VisualEvent.Kind.EXPLOSION ? Ui.withAlpha(col, 90) : null, col);
                     break;
                 case TEXT: {
-                    GLabel l = Ui.label(ev.text, ev.a.x, ev.a.y, Cyber.mono(Font.BOLD, 13), col);
+                    GLabel l = pooledLabel(ev.text, Cyber.mono(Font.BOLD, 13), col);
                     l.setLocation(ev.a.x - l.getWidth() / 2, ev.a.y);
                     o = l;
                     break;
@@ -350,12 +463,11 @@ public final class WorldView extends GCompound {
                 default: break;
             }
             if (ev.kind == VisualEvent.Kind.PHASE) {
-                GLabel l = Ui.label(ev.text, ev.a.x, ev.a.y - 60, Cyber.display(Font.BOLD, 36), col);
-                l.setLocation(ev.a.x - l.getWidth() / 2, ev.a.y - 60);
-                effectLayer.add(l);
-                effects.add(new Effect(l, VisualEvent.text(ev.a, ev.text, ev.rgb), col));
+                GLabel l = pooledLabel(ev.text, Cyber.display(Font.BOLD, 36), col);
+                l.setLocation(Math.max(8, Math.min(GameMap.WIDTH - l.getWidth() - 8, ev.a.x - l.getWidth() / 2)), Math.max(l.getHeight() + 4, ev.a.y - 60));
+                effects.add(effect(l, VisualEvent.text(ev.a, ev.text, ev.rgb), col));
             }
-            if (o != null) { effectLayer.add(o); effects.add(new Effect(o, ev, col)); }
+            if (o != null) effects.add(effect(o, ev, col));
         }
     }
 
@@ -364,7 +476,13 @@ public final class WorldView extends GCompound {
             Effect e = effects.get(i);
             e.t += dt;
             double f = Math.min(1, e.t / e.ev.duration);
-            if (f >= 1) { effectLayer.remove(e.obj); effects.remove(i); continue; }
+            if (f >= 1) {
+                int last = effects.size() - 1;
+                effects.set(i, effects.get(last));
+                effects.remove(last);
+                recycle(e);
+                continue;
+            }
             int alpha = (int) (255 * (1 - f));
             switch (e.ev.kind) {
                 case EXPLOSION: case ABILITY: case TELEPORT: case DEATH: case SPLIT: case PHASE: {
@@ -461,10 +579,50 @@ public final class WorldView extends GCompound {
             }
             if (mouse != null && insideWorld(mouse)) hover = game.getTowerManager().towerAt(mouse);
         }
+        syncReticle(mouse);
         // nameplates: tower under the cursor and the selected tower
         Tower selShow = sel != null && sel.isAlive() && placing == null ? sel : null;
         showPlate(selectPlate, selShow);
         showPlate(hoverPlate, hover != null && hover != selShow ? hover : null);
+    }
+
+    /**
+     * Targeting-mode reticle: snaps to the spot the sim will use (the nearest track bend within the ability's snap range
+     * if it has one, otherwise the nearest point on the track) and previews the effect radius.
+     */
+    private void syncReticle(Vec mouse) {
+        Tower caster = screen.getTargetingTower();
+        boolean on = caster != null && caster.isAlive() && caster.getAbility() != null && mouse != null && insideWorld(mouse);
+        reticleRadius.setVisible(on); reticleDot.setVisible(on); reticleH.setVisible(on); reticleV.setVisible(on);
+        reticleLink.setVisible(on); reticlePlate.setVisible(on);
+        if (!on) return;
+        AbilityDef a = caster.getAbility();
+        Vec at = null;
+        boolean bend = false;
+        if (a.has("snapRange")) {
+            List<Effects.TrackPoint> bends = game.getEffects().bendsInRange(mouse, a.p("snapRange"));
+            if (!bends.isEmpty()) { at = bends.get(0).position; bend = true; }
+        }
+        if (at == null) {
+            Effects.TrackPoint tp = game.getEffects().nearestTrackPoint(mouse);
+            if (tp != null) at = tp.position;
+        }
+        if (at == null) { reticleRadius.setVisible(false); reticleDot.setVisible(false); reticleH.setVisible(false); reticleV.setVisible(false); reticleLink.setVisible(false); reticlePlate.setVisible(false); return; }
+        Color col = Ui.c(caster.getType().primaryRgb);
+        col = Cyber.lerp(col, Cyber.YELLOW, 0.5);
+        double r = a.p("radius", 60);
+        reticleRadius.set(at.x, at.y, r);
+        reticleRadius.setFill(Cyber.alpha(col, 30)); reticleRadius.setLine(Cyber.alpha(col, 240));
+        reticleRadius.setPhase(time * 18);
+        double pr = 11 + 2 * Math.sin(time * 8);
+        reticleDot.set(at.x, at.y, pr); reticleDot.setLine(col);
+        double k = pr + 8;
+        reticleH.setStartPoint(at.x - k, at.y); reticleH.setEndPoint(at.x + k, at.y);
+        reticleV.setStartPoint(at.x, at.y - k); reticleV.setEndPoint(at.x, at.y + k);
+        reticleH.setColor(col); reticleV.setColor(col);
+        reticleLink.setStartPoint(mouse.x, mouse.y); reticleLink.setEndPoint(at.x, at.y);
+        reticlePlate.set(a.name, bend ? "snaps to track bend" : "on the track", col);
+        placePlate(reticlePlate, at, Math.max(r, pr));
     }
 
     private void showPlate(Nameplate p, Tower t) {
@@ -506,7 +664,12 @@ public final class WorldView extends GCompound {
             g2.translate(Ui.WORLD_X + offX, Ui.WORLD_Y + viewDock);
             g2.scale(viewScale, viewScale);
             g2.clipRect(0, 0, GameMap.WIDTH, GameMap.HEIGHT);
-            super.paint(g2);
+            int prevLod = Thick.setLevel(lod);
+            try {
+                super.paint(g2);
+            } finally {
+                Thick.setLevel(prevLod);
+            }
         } finally {
             g2.dispose();
         }

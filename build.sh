@@ -10,5 +10,5 @@ if [ ! -f lib/acm.jar ]; then
 fi
 rm -rf build && mkdir -p build
 find src -name '*.java' > build/sources.txt
-javac -Xlint:all -Xlint:-serial -encoding UTF-8 -d build -cp lib/acm.jar @build/sources.txt
+javac --release 11 -Xlint:all -Xlint:-serial -encoding UTF-8 -d build -cp lib/acm.jar @build/sources.txt
 echo "Build OK -> build/"

@@ -88,6 +88,8 @@ public final class UIButton extends GCompound {
         if (k != null) icon.setKind(k);
         layoutContent();
     }
+    /** Strike the icon through (audio toggles use this for the "off" state). */
+    public void setIconStruck(boolean s) { icon.setStruck(s); }
     /** Legacy colour setter: the fill hue becomes the accent colour. */
     public void setColors(Color fill, Color text) { if (fill != null && fill.getAlpha() > 0) { accent = fill; } textOverride = text; }
     public void setSelectedColor(Color c) { accent = c; }
@@ -144,6 +146,7 @@ public final class UIButton extends GCompound {
     public boolean click() {
         if (!enabled || !isVisible()) return false;
         pressT = 1;
+        lindefense.audio.AudioManager.sfx(lindefense.audio.Sfx.UI_CLICK);   // AUDIO HOOK
         if (action != null) action.run();
         return true;
     }
